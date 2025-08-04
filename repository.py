@@ -33,10 +33,11 @@ INC-4-8-001, 08:00, Jira, Crítico, Usuario recibe spam en su correo, Cerrado
 user_question = st.text_input("Describe el incidente:")
 if st.button("Reportar", use_container_width=True):
     prompt = persona + "\n\nEntrada del usuario:\n" + user_question
-    response = model.generate_content(prompt).text.strip()
+    response = model.generate_content([prompt]).text.strip()
 
     # Separar por coma y guardar como fila
     fila = [datetime.now().isoformat()] + response.split(",")
     ws.append_row(fila[:7])  # Fecha + 6 columnas
     st.success("Incidente registrado")
+
     st.write(fila)
