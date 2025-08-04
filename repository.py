@@ -33,7 +33,7 @@ persona = (
 user_question = st.text_input("Describe el incidente:")
 if st.button("Reportar", use_container_width=True):
     prompt = persona + "\n\nEntrada del usuario:\n" + user_question
-    response = model.generate_content([prompt]).text.strip()
+    response = model.generate_content(prompt).text
 
     # Separar por coma y guardar como fila
     fila = [datetime.now().isoformat()] + response.split(",")
@@ -41,4 +41,5 @@ if st.button("Reportar", use_container_width=True):
     st.success("Incidente registrado")
 
     st.write(fila)
+
 
