@@ -60,13 +60,14 @@ user_question = st.text_input("Describe el incidente:")
 if st.button("Reportar", use_container_width=True):
     prompt = persona + "\n\n[REPORTE DE ENTRADA]\n" + user_question
     try:
-        response = model.generate_content([prompt]).text
-        fila = [datetime.now().isoformat()] + response.split(",")
-        ws.append_row(fila[:7])  # Fecha + 6 columnas
+        response = model.generate_content([prompt]).text.strip()
+        fila = response.split(",")  # genera la fila en orden de columnas
+        ws.append_row(fila)  # se insertará en la matriz correctamente
         st.success("Incidente registrado")
         st.write(fila)
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
 
 
 
