@@ -301,20 +301,22 @@ if st.button("Reportar", use_container_width=True):
     try:
         response = model.generate_content([prompt]).text.strip()
 
-        # Limpieza y separación por tubería (|) — mejor que usar coma
         clean_response = response.replace('"', '').replace("\n", "").strip()
-        fila = clean_response.split("|")  # Usa | como separador confiable
+        separator_count = clean_response.count("|")
 
-        if len(fila) == 20:
+        if separator_count != 20:
+            st.error(f"La salida tiene {separator_count + 1} columnas (esperado: 21). Revisa el prompt o ajusta la entrada.")
+            st.code(clean_response, language="text")
+        else:
+            fila = clean_response.split("|")
             ws.append_row(fila)
             st.success("Incidente registrado")
             st.write(fila)
-        else:
-            st.error(f"La salida tiene {len(fila)} columnas en lugar de 21. Revisa el prompt o la entrada.")
-            st.code(clean_response, language="text")
 
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
+
 
 
 
