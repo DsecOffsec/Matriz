@@ -309,6 +309,12 @@ if st.button("Reportar", use_container_width=True):
             st.code(clean_response, language="text")
         else:
             fila = clean_response.split("|")
+
+            # Asegura que la fila tenga exactamente 21 columnas
+            if len(fila) < 21:
+                while len(fila) < 21:
+                    fila.append("")
+
             ws.append_row(fila)
             st.success("Incidente registrado")
             st.write(fila)
