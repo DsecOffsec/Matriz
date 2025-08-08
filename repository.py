@@ -288,10 +288,10 @@ if st.button("Reportar", use_container_width=True):
     prompt = persona + "\n\n[REPORTE DE ENTRADA]\n" + user_question
     try:
         response = model.generate_content([prompt]).text.strip()
-        fila = response.split(",")  # genera la fila en orden de columnas
+        fila = response.split("|")  # corregido: usar | como separador real
 
         if len(fila) == 21:
-            ws.append_row(fila)  # se insertará en la matriz correctamente
+            ws.append_row(fila)
             st.success("Incidente registrado")
             st.write(fila)
         else:
