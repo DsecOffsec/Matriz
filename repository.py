@@ -301,7 +301,7 @@ if st.button("Reportar", use_container_width=True):
         clean_response = response.replace('"', '').replace("\n", "").strip()
         fila = clean_response.split("|")  # Usa | como separador confiable
 
-        if len(fila) == 21:
+        if len(fila) == 20:
             ws.append_row(fila)
             st.success("Incidente registrado")
             st.write(fila)
@@ -311,6 +311,7 @@ if st.button("Reportar", use_container_width=True):
 
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
 
 
 
