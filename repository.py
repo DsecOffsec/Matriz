@@ -273,6 +273,11 @@ COLUMNAS A LLENAR (en orden):
 
 ---
 
+INSTRUCCIONES:
+- Entrega la fila como una **lista separada por comas**, sin explicaciones ni comillas.
+- Si algún dato no puede ser deducido del reporte, deja ese campo vacío.
+- Usa tu criterio profesional para interpretar los campos según el contexto del incidente.
+
 GUIA DE VULNERABILIDADES:
 {guia_vuln}
 
@@ -300,6 +305,7 @@ if st.button("Reportar", use_container_width=True):
 
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
 
 
 
