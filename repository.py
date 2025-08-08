@@ -258,15 +258,17 @@ COLUMNAS A LLENAR (en orden):
    - Escribe "Cerrado" si el incidente fue resuelto o "En investigación" si sigue activo.
 
 18. Vulnerabilidad:
-   - Usa solo el **ID numérico** de la vulnerabilidad según la guía de abajo (ej: "1.3").
-   - No escribas texto descriptivo como "Denegación de servicio".
+   - Identifica el tipo de vulnerabilidad que causó el incidente, basándote en el contenido del reporte.
+   - Elige la opción más adecuada de la lista de vulnerabilidades provista abajo.
+   - Escribe solo el código numérico correspondiente (ej: "1.3").
 
 19. Causa:
    - Déjalo vacío. Se autocompletará en Excel.
 
 20. ID Amenaza:
-   - Usa solo el **ID numérico** de la amenaza (ej: "2.1"), **sin el texto**.
-   - La descripción se completará automáticamente.
+   - Interpreta la amenaza que mejor se ajusta al incidente descrito.
+   - Usa únicamente el número de ID según la guía provista.
+   - No escribas texto explicativo, solo el número (ej: "3.5").
 
 21. Amenaza:
    - Déjalo vacío. Se autocompletará en Excel.
@@ -311,6 +313,7 @@ if st.button("Reportar", use_container_width=True):
 
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
 
 
 
