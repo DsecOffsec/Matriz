@@ -278,6 +278,9 @@ INSTRUCCIONES:
 - Si algún dato no puede ser deducido del reporte, deja ese campo vacío.
 - Usa tu criterio profesional para interpretar los campos según el contexto del incidente.
 
+ENTREGA:
+Devuelve una sola línea de texto, sin comillas, sin saltos de línea, con exactamente 21 campos separados por "|".
+
 GUIA DE VULNERABILIDADES:
 {guia_vuln}
 
@@ -293,7 +296,10 @@ if st.button("Reportar", use_container_width=True):
     prompt = persona + "\n\n[REPORTE DE ENTRADA]\n" + user_question
     try:
         response = model.generate_content([prompt]).text.strip()
-        fila = response.split("|")  # corregido: usar | como separador real
+
+        # Limpieza y separación por tubería (|) — mejor que usar coma
+        clean_response = response.replace('"', '').replace("\n", "").strip()
+        fila = clean_response.split("|")  # Usa | como separador confiable
 
         if len(fila) == 21:
             ws.append_row(fila)
@@ -301,10 +307,11 @@ if st.button("Reportar", use_container_width=True):
             st.write(fila)
         else:
             st.error(f"La salida tiene {len(fila)} columnas en lugar de 21. Revisa el prompt o la entrada.")
-            st.write(fila)
+            st.code(clean_response, language="text")
 
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
 
 
 
