@@ -258,15 +258,15 @@ COLUMNAS A LLENAR (en orden):
    - Escribe "Cerrado" si el incidente fue resuelto o "En investigación" si sigue activo.
 
 18. Vulnerabilidad:
-   - Interpreta el tipo de vulnerabilidad según el contenido del reporte.
-   - Escribe únicamente el **ID numérico** (ej: "1.3") usando la guía a continuación.
+   - Usa solo el **ID numérico** de la vulnerabilidad según la guía de abajo (ej: "1.3").
+   - No escribas texto descriptivo como "Denegación de servicio".
 
 19. Causa:
    - Déjalo vacío. Se autocompletará en Excel.
 
 20. ID Amenaza:
-   - Interpreta el tipo de amenaza (ej. sobrecarga laboral, malware).
-   - Escribe solo el **ID numérico** (ej: "2.1") según la guía siguiente.
+   - Usa solo el **ID numérico** de la amenaza (ej: "2.1"), **sin el texto**.
+   - La descripción se completará automáticamente.
 
 21. Amenaza:
    - Déjalo vacío. Se autocompletará en Excel.
@@ -301,7 +301,7 @@ if st.button("Reportar", use_container_width=True):
         clean_response = response.replace('"', '').replace("\n", "").strip()
         fila = clean_response.split("|")  # Usa | como separador confiable
 
-        if len(fila) == 20:
+        if len(fila) == 21:
             ws.append_row(fila)
             st.success("Incidente registrado")
             st.write(fila)
@@ -311,6 +311,7 @@ if st.button("Reportar", use_container_width=True):
 
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
 
 
 
