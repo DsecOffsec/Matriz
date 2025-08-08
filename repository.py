@@ -289,11 +289,19 @@ if st.button("Reportar", use_container_width=True):
     try:
         response = model.generate_content([prompt]).text.strip()
         fila = response.split(",")  # genera la fila en orden de columnas
-        ws.append_row(fila)  # se insertará en la matriz correctamente
-        st.success("Incidente registrado")
-        st.write(fila)
+
+        if len(fila) == 21:
+            ws.append_row(fila)  # se insertará en la matriz correctamente
+            st.success("Incidente registrado")
+            st.write(fila)
+        else:
+            st.error(f"La salida tiene {len(fila)} columnas en lugar de 21. Revisa el prompt o la entrada.")
+            st.write(fila)
+
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
+
 
 
 
