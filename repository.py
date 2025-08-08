@@ -276,7 +276,9 @@ COLUMNAS A LLENAR (en orden):
 ---
 
 INSTRUCCIONES:
-- Entrega la fila como una **lista separada por comas**, sin explicaciones ni comillas.
+- Entrega la fila como una lista separada por | (barra vertical), sin explicaciones ni comillas.
+- Asegúrate de entregar exactamente 21 valores (aunque algunos estén vacíos).
+- Deja vacíos los campos "Causa" y "Amenaza", pero deben estar presentes como columnas vacías.
 - Si algún dato no puede ser deducido del reporte, deja ese campo vacío.
 - Usa tu criterio profesional para interpretar los campos según el contexto del incidente.
 
@@ -313,6 +315,7 @@ if st.button("Reportar", use_container_width=True):
 
     except Exception as e:
         st.error(f"Error al generar contenido: {e}")
+
 
 
 
