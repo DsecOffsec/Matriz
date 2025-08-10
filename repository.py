@@ -2,7 +2,8 @@ import streamlit as st
 import gspread
 import pandas as pd
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
 import google.generativeai as genai
 from typing import List, Tuple
 
@@ -12,7 +13,7 @@ st.title("MATRIZ DE REPORTES DSEC")
 # Conexiones y configuración
 # ---------------------------
 gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
-SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"  # si puedes, pásalo a secrets
+SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"  # ideal: mover a secrets
 sh = gc.open_by_key(SHEET_ID)
 ws = sh.worksheet("Reportes")
 
@@ -20,8 +21,10 @@ api_key = st.secrets["GOOGLE_API_KEY"]
 genai.configure(api_key=api_key)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
+TZ = ZoneInfo("America/La_Paz")
+
 # ---------------------------
-# Guías
+# Guías (texto de referencia)
 # ---------------------------
 guia_vuln = """  
 1.1 - Ausencia o carencia de personal idóneo.
@@ -194,13 +197,13 @@ guia_amenazas = """
 4.7 - Acceso a información confidencial y de uso interno desde componentes tecnológicos reciclados o desechados.
 """
 
-# Conjuntos válidos
+# Conjuntos válidos y patrones
 ID_VULN_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_vuln))
 ID_AMENAZA_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_amenazas))
 CODE_RE = re.compile(r'^\d+\.\d+$')
 
 # ---------------------------
-# Prompt (CODIGO lo genera el sistema)
+# Prompt (CODIGO lo genera backend y no se inventan fechas)
 # ---------------------------
 persona = f"""
 Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
@@ -210,10 +213,11 @@ Reglas:
 - Si un campo llevaría |, reemplázalo por /.
 - Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
 - Zona horaria: America/La_Paz.
+- NO inventes fechas: si el reporte no incluye una fecha explícita con día/mes/año (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacíos los campos de fecha. Si solo hay horas, no pongas fecha.
 
 Columnas y formato:
 1. CODIGO → (dejar vacío; lo genera el sistema).
-2. Fecha y Hora de Apertura → YYYY-MM-DD HH:MM, solo si se menciona.
+2. Fecha y Hora de Apertura → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
 3. Modo Reporte → valores válidos (Correo, Jira, Teléfono, Monitoreo, …).
 4. Evento/ Incidente → Evento | Incidente.
 5. Descripción Evento/ Incidente → resumen claro y profesional.
@@ -226,7 +230,7 @@ Columnas y formato:
 12. Solución
 13. Area de GTIC - Coordinando → (Redes, Seguridad Informática, Soporte Técnico, Sistemas, …).
 14. Encargado SI → solo si se menciona; no inventes nombres.
-15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona.
+15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
 16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
 17. Estado → Cerrado | En investigación.
 18. Vulnerabilidad → SOLO un código con formato N.N tomado de la “Guia Vuln”.
@@ -244,7 +248,7 @@ Guía de Amenazas:
 """
 
 # ---------------------------
-# Utilidades
+# Utilidades de saneamiento / validación
 # ---------------------------
 def sanitize_text(s: str) -> str:
     s = s.strip()
@@ -283,7 +287,7 @@ def valida_id(code: str, validos: set) -> str:
 def parse_dt(s: str):
     s = s.strip()
     try:
-        return datetime.strptime(s, "%Y-%m-%d %H:%M")
+        return datetime.strptime(s, "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
     except Exception:
         return None
 
@@ -297,10 +301,46 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
         return f"{horas} horas {minutos} minutos"
     return ""
 
-# --- Reubicador de códigos mal colocados (Causa/Amenaza) ---
+# ---------------------------
+# No inventar fechas: detección de fecha explícita y cálculo por horas
+# ---------------------------
+MESES_ES = r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
+
+def hay_fecha_explicita(texto: str) -> bool:
+    t = texto.lower()
+    if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", t):  # 2025-08-10
+        return True
+    if re.search(r"\b\d{1,2}[/-]\d{1,2}[/-](?:20)?\d{2}\b", t):  # 10/08/2025 o 10-08-25
+        return True
+    if re.search(rf"\b\d{{1,2}}\s+de\s+(?:{MESES_ES})(?:\s+de\s+\d{{4}})?\b", t):  # 10 de agosto (de 2025)
+        return True
+    return False
+
+def extraer_horas(texto: str):
+    hhmm = re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", texto)
+    return [f"{int(h):02d}:{int(m):02d}" for h, m in hhmm]
+
+def calcula_tiempo_desde_texto(texto: str) -> str:
+    horas = extraer_horas(texto)
+    if len(horas) < 2:
+        return ""
+    h_ini, h_fin = horas[0], horas[-1]
+    today = datetime.now(TZ).date()
+    dt_a = datetime.strptime(f"{today} {h_ini}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+    dt_c = datetime.strptime(f"{today} {h_fin}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+    if dt_c < dt_a:  # pasó medianoche
+        dt_c = dt_c + timedelta(days=1)
+    delta = dt_c - dt_a
+    horas = delta.seconds // 3600 + delta.days * 24
+    minutos = (delta.seconds % 3600) // 60
+    return f"{horas} horas {minutos} minutos"
+
+# ---------------------------
+# Reubicador de códigos mal colocados (Causa/Amenaza)
+# ---------------------------
 def reubicar_codigos_mal_colocados(fila: List[str]) -> list[str]:
     movimientos = []
-    # Si Causa (18) trae un código, muévelo y limpia
+    # Si Causa (19, index 18) trae código, reubicar
     if fila[18].strip() and CODE_RE.fullmatch(fila[18].strip()):
         code = fila[18].strip()
         if code in ID_AMENAZA_VALIDOS and not fila[19].strip():
@@ -310,7 +350,7 @@ def reubicar_codigos_mal_colocados(fila: List[str]) -> list[str]:
             fila[17] = code
             movimientos.append("Vulnerabilidad <- Causa")
         fila[18] = ""
-    # Si Amenaza (21) trae un código, muévelo y limpia
+    # Si Amenaza (21, index 20) trae código, reubicar
     if fila[20].strip() and CODE_RE.fullmatch(fila[20].strip()):
         code = fila[20].strip()
         if code in ID_AMENAZA_VALIDOS and not fila[19].strip():
@@ -322,7 +362,9 @@ def reubicar_codigos_mal_colocados(fila: List[str]) -> list[str]:
         fila[20] = ""
     return movimientos
 
-# --- Inferencia determinística como respaldo ---
+# ---------------------------
+# Reglas determinísticas de respaldo
+# ---------------------------
 _PAT_AMENAZA = [
     (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
     (r"(ransom|cifrad[oa].*archivo|encrypt(ed)? files?)", "3.5"),
@@ -374,15 +416,15 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
     dia, mes = None, None
     if fecha_apertura:
         try:
-            dt = datetime.strptime(fecha_apertura.strip(), "%Y-%m-%d %H:%M")
+            dt = datetime.strptime(fecha_apertura.strip(), "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
             dia, mes = dt.day, dt.month
         except Exception:
             pass
     if dia is None:
-        now = datetime.now()
+        now = datetime.now(TZ)
         dia, mes = now.day, now.month
 
-    codigos = ws.col_values(1)
+    codigos = ws.col_values(1)  # CODIGO
     patron = re.compile(rf"^INC-{dia}-{mes}-(\d{{3}})$")
     max_seq = 0
     for c in codigos:
@@ -407,8 +449,8 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
 # ---------------------------
 user_question = st.text_area(
     "Describe el incidente:",
-    height=140,
-    placeholder="Ej: A las 08:30 usuarios de Contabilidad no pueden autenticarse en AD..."
+    height=160,
+    placeholder="Ej: A las 08:45 el área de Contabilidad no puede acceder al correo..."
 )
 
 if st.button("Reportar", use_container_width=True):
@@ -434,6 +476,11 @@ if st.button("Reportar", use_container_width=True):
         cleaned = sanitize_text(response_text)
         fila, avisos = normalize_21_fields(cleaned)
 
+        # Si el texto NO trae fecha explícita, forzar vacíos en 2 y 15
+        if not hay_fecha_explicita(user_question):
+            fila[1] = ""   # Fecha y Hora de Apertura
+            fila[14] = ""  # Fecha y Hora de Cierre
+
         # Reubicar si Gemini metió códigos en Causa/Amenaza
         movimientos = reubicar_codigos_mal_colocados(fila)
 
@@ -458,15 +505,17 @@ if st.button("Reportar", use_container_width=True):
             st.error("Faltan códigos en Vulnerabilidad (18) o ID Amenaza (20). Ajusta el reporte o completa manualmente.")
             st.stop()
 
-        # Autocálculo de Tiempo de Solución si procede
+        # Tiempo de solución: primero usando fechas, si no existen, calcular por horas del texto
         if not fila[15].strip():
             fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
+        if not fila[15].strip():
+            fila[15] = calcula_tiempo_desde_texto(user_question)
 
         # Estado por defecto si falta
         if not fila[16].strip():
             fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
 
-        # Generar CODIGO backend (col 1) según Fecha Apertura (col 2)
+        # Generar CODIGO backend (col 1) según Fecha Apertura (col 2) o fecha actual
         codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
         fila[0] = codigo
 
