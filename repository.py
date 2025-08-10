@@ -1,23 +1,28 @@
 import streamlit as st
 import gspread
 import pandas as pd
-import time
-import google.generativeai as genai
+import re
 from datetime import datetime
+import google.generativeai as genai
+from typing import List, Tuple
 
 st.title("MATRIZ DE REPORTES DSEC")
 
-# Acceso a Google Sheets
+# ---------------------------
+# Conexiones y configuración
+# ---------------------------
 gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
-SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"
+SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"  # opcional: mover a secrets
 sh = gc.open_by_key(SHEET_ID)
 ws = sh.worksheet("Reportes")
 
-# API Gemini
 api_key = st.secrets["GOOGLE_API_KEY"]
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-1.5-flash")  # versión más estable
+model = genai.GenerativeModel("gemini-1.5-flash")
 
+# ---------------------------
+# Guías (idénticas a las tuyas)
+# ---------------------------
 guia_vuln = """  
 1.1 - Ausencia o carencia de personal idóneo.
 1.2 - Ausencia o carencia de conocimientos y habilidades en informática.
@@ -189,10 +194,15 @@ guia_amenazas = """
 4.7 - Acceso a información confidencial y de uso interno desde componentes tecnológicos reciclados o desechados.
 """
 
+# Extrae conjuntos válidos de IDs (p.ej. "1.3")
+ID_VULN_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_vuln))
+ID_AMENAZA_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_amenazas))
 
-# Prompt más compacto y robusto
+# ---------------------------
+# Prompt (corregido: 1 sola etiqueta de entrada)
+# ---------------------------
 persona = f"""
-Eres un asistente experto en seguridad informática. Tu tarea es transformar un reporte de incidente en lenguaje natural en una fila estructurada para una hoja de cálculo. Cada campo debe llenarse según las siguientes instrucciones. Si no se puede deducir la información, deja el campo vacío. Usa tu criterio profesional.
+Eres un asistente experto en seguridad informática. Tu tarea es transformar un reporte de incidente en una fila estructurada para una hoja de cálculo. Cada campo debe llenarse según las siguientes instrucciones. Si no se puede deducir la información, deja el campo vacío. Entrega exactamente 21 campos separados por "|", sin texto adicional ni saltos de línea.
 
 COLUMNAS A LLENAR (en orden):
 
@@ -201,89 +211,68 @@ COLUMNAS A LLENAR (en orden):
    - Si no se menciona hora, usa la hora actual en formato HHMM.
 
 2. Fecha y Hora de Apertura:
-   - Solo si se menciona explícitamente una hora de apertura en el reporte (ej: “a las 8am”).
-   - Usa el formato "YYYY-MM-DD HH:MM".
-   - Si no se menciona, deja vacío.
+   - Solo si se menciona explícitamente una hora de apertura (formato "YYYY-MM-DD HH:MM"), si no, vacío.
 
 3. Modo Reporte:
-   - Identifica cómo se reportó: puede ser "Jira", "Correo", "Teléfono", "Monitoreo", etc.
+   - "Jira", "Correo", "Teléfono", "Monitoreo", etc.
 
 4. Evento/Incidente:
-   - Escribe "Evento" si es una alerta puntual o "Incidente" si es una afectación mayor.
+   - "Evento" o "Incidente".
 
 5. Descripción Evento/Incidente:
-   - Redacta de forma clara y profesional lo ocurrido (ej. "Falla de acceso a WhatsApp por bloqueo en firewall").
+   - Redacta claro y profesional.
 
 6. Sistema:
-   - Indica qué sistema fue afectado (ej. VPN, Correo, Active Directory, WhatsApp, etc.).
+   - Sistema afectado (VPN, Correo, AD, WhatsApp, etc.).
 
 7. Área:
-   - Indica el área institucional afectada o que reportó el incidente (ej. Contabilidad, Talento Humano).
+   - Área afectada o que reporta (Contabilidad, TI, etc.).
 
 8. Ubicación:
-   - Si se menciona una sede o ubicación geográfica o interna, indícala. Si no, deja vacío.
+   - Sede/ubicación, si existe.
 
 9. Prioridad:
-   - Interpreta si el incidente es de prioridad Alta, Media o Baja.
-   - Esta clasificación está descrita en la hoja "Definiciones".
+   - Alta/Media/Baja (según "Definiciones").
 
 10. Clasificación:
-   - Interpreta el tipo de clasificación del incidente según los términos establecidos (ej. "Acceso no autorizado", "Interrupción de servicio").
-   - Usa únicamente clasificaciones válidas definidas en la hoja "Definiciones".
+   - Usar clasificaciones válidas de "Definiciones".
 
 11. Acción Inmediata:
-   - Si se menciona algo que el usuario hizo antes de reportar (ej. reinició el equipo, cambió contraseña), escríbelo.
-   - Si no se menciona, deja vacío.
+   - Qué hizo el usuario antes de reportar, si aplica.
 
 12. Solución:
-   - Explica brevemente cómo se resolvió el incidente (ej. "Se reinició el servicio").
+   - Breve descripción de la solución.
 
 13. Área GTIC - Coordinando:
-   - Indica qué área lideró la solución (Redes, Seguridad Informática, Soporte Técnico, etc.).
+   - Redes, Seguridad Informática, Soporte, etc.
 
 14. Encargado SI:
-   - Si se menciona a una persona del equipo de seguridad informática, escríbela.
-   - Usa los nombres disponibles en la hoja "Definiciones".
-   - Si no se menciona, deja vacío.
+   - Persona de Seguridad Informática (si se menciona).
 
 15. Fecha y Hora de Cierre:
-   - Solo si el reporte menciona una hora de resolución (ej: “a las 11am se resolvió”).
-   - Usa formato "YYYY-MM-DD HH:MM". Si no se menciona, deja vacío.
+   - Solo si se menciona explícitamente (formato "YYYY-MM-DD HH:MM").
 
 16. Tiempo de Solución:
-   - Calcula el tiempo entre apertura y cierre como "X horas Y minutos".
-   - Si no hay hora de cierre, deja vacío.
+   - Si no puedes calcularlo, déjalo vacío.
 
 17. Estado:
-   - Escribe "Cerrado" si el incidente fue resuelto o "En investigación" si sigue activo.
+   - "Cerrado" o "En investigación".
 
 18. Vulnerabilidad:
-   - Identifica el tipo de vulnerabilidad que causó el incidente, basándote en el contenido del reporte.
-   - Elige la opción más adecuada de la lista de vulnerabilidades provista abajo.
-   - Escribe solo el código numérico correspondiente (ej: "1.3").
+   - Código de la lista (solo número, ej. "1.3").
 
 19. Causa:
-   - Déjalo vacío. Se autocompletará en Excel.
+   - Vacío (se autocompleta en Excel).
 
 20. ID Amenaza:
-   - Interpreta la amenaza que mejor se ajusta al incidente descrito.
-   - Usa únicamente el número de ID según la guía provista.
-   - No escribas texto explicativo, solo el número (ej: "3.5").
+   - Código de la lista (solo número, ej. "3.5").
 
 21. Amenaza:
-   - Déjalo vacío. Se autocompletará en Excel.
+   - Vacío (se autocompleta en Excel).
 
----
-
-INSTRUCCIONES:
-- Entrega la fila como una lista separada por | (barra vertical), sin explicaciones ni comillas.
-- Asegúrate de entregar exactamente 21 valores (aunque algunos estén vacíos).
-- Deja vacíos los campos "Causa" y "Amenaza", pero deben estar presentes como columnas vacías.
-- Si algún dato no puede ser deducido del reporte, deja ese campo vacío.
-- Usa tu criterio profesional para interpretar los campos según el contexto del incidente.
-
-ENTREGA:
-Devuelve una sola línea de texto, sin comillas, sin saltos de línea, con exactamente 21 campos separados por "|".
+INSTRUCCIONES IMPORTANTES:
+- Devuelve una sola línea sin comillas, sin markdown, sin explicaciones.
+- Exactamente 21 campos separados por "|" aunque estén vacíos.
 
 GUIA DE VULNERABILIDADES:
 {guia_vuln}
@@ -291,50 +280,145 @@ GUIA DE VULNERABILIDADES:
 GUIA DE AMENAZAS:
 {guia_amenazas}
 
-[REPORTE DE ENTRADA]
+[REPORTE DE ENTRADA]:
 """
 
-user_question = st.text_input("Describe el incidente:")
+# ---------------------------
+# Utilidades de saneamiento / validación
+# ---------------------------
+def sanitize_text(s: str) -> str:
+    s = s.strip()
+    # quita fences y markdown comunes
+    s = re.sub(r"^```.*?\n", "", s, flags=re.DOTALL)  # inicio de bloque
+    s = re.sub(r"```$", "", s)
+    s = s.replace("```", "")
+    s = s.replace("\n", " ").replace("\r", " ")
+    s = s.replace("“", '"').replace("”", '"').replace("’", "'")
+    # intenta quedarte con la primera línea que contenga pipes
+    m = re.search(r"[^|\n]*\|[^|\n]*\|", s)
+    if m:
+        # recorta desde el primer pipe encontrado
+        s = s[m.start():]
+    return s.strip().strip('"').strip()
+
+def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
+    """Devuelve (fila_21_campos, avisos_de_correccion)."""
+    avisos = []
+    parts = [p.strip() for p in raw.split("|")]
+    # elimina vacíos por pasado de barras circunstanciales
+    # pero NO elimines vacíos legítimos; solo recorte extremos
+    # (no hacemos strip de vacíos intermedios)
+    # Ajuste de cantidad
+    if len(parts) > 21:
+        # une el excedente en la columna 5 (Descripción, index 4)
+        desc_extra = " | ".join(parts[4:len(parts)-(21-5)])
+        nueva = parts[:4] + [desc_extra] + parts[len(parts)-(21-5):]
+        parts = nueva
+        avisos.append(f"Se detectaron {len(parts)}+ campos; se fusionó el excedente en 'Descripción'.")
+    if len(parts) < 21:
+        avisos.append(f"Se detectaron {len(parts)} campos; se completaron {21-len(parts)} vacíos.")
+        parts += [""] * (21 - len(parts))
+    # trim final a cada campo
+    parts = [p.strip() for p in parts]
+    return parts, avisos
+
+def valida_id(code: str, validos: set) -> str:
+    code = code.strip()
+    if re.fullmatch(r"\d+\.\d+", code) and code in validos:
+        return code
+    return ""
+
+def parse_dt(s: str):
+    s = s.strip()
+    try:
+        return datetime.strptime(s, "%Y-%m-%d %H:%M")
+    except Exception:
+        return None
+
+def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
+    dt_a = parse_dt(apertura) if apertura else None
+    dt_c = parse_dt(cierre) if cierre else None
+    if dt_a and dt_c and dt_c >= dt_a:
+        delta = dt_c - dt_a
+        horas = delta.seconds // 3600 + delta.days * 24
+        minutos = (delta.seconds % 3600) // 60
+        return f"{horas} horas {minutos} minutos"
+    return ""
+
+# ---------------------------
+# UI
+# ---------------------------
+user_question = st.text_area("Describe el incidente:", height=140, placeholder="Ej: A las 08:30 usuarios de Contabilidad no pueden autenticarse en AD...")
 
 if st.button("Reportar", use_container_width=True):
-    prompt = persona + "\n\n[REPORTE DE ENTRADA]\n" + user_question
-    try:
-        response = model.generate_content([prompt]).text.strip()
+    if not user_question.strip():
+        st.warning("Por favor, describe el incidente antes de continuar.")
+        st.stop()
 
-        clean_response = response.replace('"', '').replace("\n", "").strip()
-        separator_count = clean_response.count("|")
+    prompt = persona + user_question.strip()
 
-        if separator_count != 20:
-            st.error(f"La salida tiene {separator_count + 1} columnas (esperado: 21). Revisa el prompt o ajusta la entrada.")
-            st.code(clean_response, language="text")
-        else:
-            fila = clean_response.split("|")
+    with st.spinner("Generando y validando la fila..."):
+        # Retry simple (hasta 2 intentos)
+        last_err = None
+        response_text = None
+        for _ in range(2):
+            try:
+                response = model.generate_content([prompt])
+                response_text = response.text if hasattr(response, "text") else str(response)
+                break
+            except Exception as e:
+                last_err = e
+        if response_text is None:
+            st.error(f"Error al generar contenido: {last_err}")
+            st.stop()
 
-            # Asegura que la fila tenga exactamente 21 columnas
-            if len(fila) < 21:
-                while len(fila) < 21:
-                    fila.append("")
+        cleaned = sanitize_text(response_text)
+        fila, avisos = normalize_21_fields(cleaned)
 
-            ws.append_row(fila)
-            st.success("Incidente registrado")
-            st.write(fila)
+        # Validaciones de códigos
+        fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)  # Vulnerabilidad
+        fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)  # ID Amenaza
 
-    except Exception as e:
-        st.error(f"Error al generar contenido: {e}")
+        # Autocálculo de Tiempo de Solución si procede (col 16 = index 15 es Cierre; 2 = Apertura index 1; 16 = Tiempo index 15? OJO)
+        # Índices (base 0):
+        # 1: CODIGO(0)  2:Apertura(1)  ... 15:Cierre(14)  16:Tiempo(15)
+        if not fila[15].strip():
+            fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
 
+        # Reglas de negocio menores
+        # Estado (17 = index 16) si falta, infiérelo por presencia de Cierre
+        if not fila[16].strip():
+            fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
 
+        # Confirmación final de 21 campos
+        if len(fila) != 21:
+            st.error(f"La salida quedó con {len(fila)} columnas tras saneo (esperado: 21).")
+            st.code(cleaned, language="text")
+            st.stop()
 
+        # Vista previa
+        columnas = [
+            "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/Incidente","Descripción Evento/Incidente",
+            "Sistema","Área","Ubicación","Prioridad","Clasificación","Acción Inmediata","Solución",
+            "Área GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo de Solución",
+            "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza"
+        ]
+        df_prev = pd.DataFrame([fila], columns=columnas)
+        st.subheader("Vista previa")
+        st.dataframe(df_prev, use_container_width=True)
 
+        if avisos:
+            st.info(" | ".join(avisos))
 
+        # Guardado
+        try:
+            ws.append_row(fila, value_input_option="RAW")
+            st.success("Incidente registrado correctamente en Google Sheets.")
+        except Exception as e:
+            st.error(f"No se pudo escribir en la hoja: {e}")
 
-
-
-
-
-
-
-
-
-
+        # Descarga CSV de la fila (útil para auditoría)
+        csv_line = "|".join(fila)
+        st.download_button("Descargar fila (pipe-separated)", data=csv_line, file_name=f"{fila[0] or 'INC'}_fila.txt", mime="text/plain")
 
 
