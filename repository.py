@@ -21,7 +21,7 @@ genai.configure(api_key=api_key)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 # ---------------------------
-# Guías (idénticas a las tuyas)
+# Guías
 # ---------------------------
 guia_vuln = """  
 1.1 - Ausencia o carencia de personal idóneo.
@@ -194,21 +194,22 @@ guia_amenazas = """
 4.7 - Acceso a información confidencial y de uso interno desde componentes tecnológicos reciclados o desechados.
 """
 
-# Conjuntos válidos de IDs (p.ej. "1.3")
+# Conjuntos válidos
 ID_VULN_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_vuln))
 ID_AMENAZA_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_amenazas))
+CODE_RE = re.compile(r'^\d+\.\d+$')
 
 # ---------------------------
-# Prompt robusto (CODIGO lo genera el sistema)
+# Prompt (CODIGO lo genera el sistema)
 # ---------------------------
 persona = f"""
 Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
 
-Reglas generales:
+Reglas:
 - Usa el ORDEN EXACTO de las 21 columnas de abajo.
 - Si un campo llevaría |, reemplázalo por /.
 - Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
-- Zona horaria para horas actuales: America/La_Paz.
+- Zona horaria: America/La_Paz.
 
 Columnas y formato:
 1. CODIGO → (dejar vacío; lo genera el sistema).
@@ -219,8 +220,8 @@ Columnas y formato:
 6. Sistema → (VPN, Correo, Active Directory, …).
 7. Area
 8. Ubicación
-9. Impacto → Alto | Medio | Bajo (según Definiciones).
-10. Clasificación → usar solo valores válidos de Definiciones.
+9. Impacto → Alto | Medio | Bajo.
+10. Clasificación → usar solo valores válidos.
 11. Acción Inmediata
 12. Solución
 13. Area de GTIC - Coordinando → (Redes, Seguridad Informática, Soporte Técnico, Sistemas, …).
@@ -233,12 +234,6 @@ Columnas y formato:
 20. ID Amenaza → SOLO un código con formato N.N tomado de la “Guia Amenazas”.
 21. Amenaza → vacío.
 
-Selección OBLIGATORIA de 18 (Vulnerabilidad) y 20 (ID Amenaza):
-- Si hay signos de ataque (phishing, malware/ransomware, fuerza bruta, exfiltración, DDoS, SQLi, suplantación): selecciona una Amenaza 3.x adecuada y una Vulnerabilidad 4.x/1.x coherente (controles débiles, falta de conciencia, etc.).
-- Si es caída/indisponibilidad sin evidencia de ataque: selecciona una Amenaza 4.x (falla tecnológica) o 2.x (ambiente) y una Vulnerabilidad 4.x que explique la causa raíz (alta disponibilidad, monitoreo, actualizaciones, etc.).
-- Si el problema nace de error humano o incumplimiento de políticas: Vulnerabilidad 1.x/2.x (conciencia/procesos) y Amenaza 1.x (personas) o 3.3 si hubo ingeniería social.
-- Elige la opción MÁS ESPECÍFICA; nunca dejes 18 ni 20 vacíos.
-
 Guía de Vulnerabilidades:
 {guia_vuln}
 
@@ -249,38 +244,33 @@ Guía de Amenazas:
 """
 
 # ---------------------------
-# Utilidades de saneamiento / validación
+# Utilidades
 # ---------------------------
 def sanitize_text(s: str) -> str:
     s = s.strip()
-    s = re.sub(r"^```.*?\n", "", s, flags=re.DOTALL)  # inicio de bloque
+    s = re.sub(r"^```.*?\n", "", s, flags=re.DOTALL)
     s = re.sub(r"```$", "", s)
     s = s.replace("```", "")
     s = s.replace("\n", " ").replace("\r", " ")
     s = s.replace("“", '"').replace("”", '"').replace("’", "'")
-    # intenta quedarte con la primera línea que contenga pipes
     m = re.search(r"[^|\n]*\|[^|\n]*\|", s)
     if m:
         s = s[m.start():]
     return s.strip().strip('"').strip()
 
 def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
-    """Devuelve (fila_21_campos, avisos_de_correccion)."""
     avisos = []
     parts = [p.strip() for p in raw.split("|")]
     original_count = len(parts)
-
     if original_count > 21:
-        # Mantén 1..4, colapsa extras en 5 (Descripción), y conserva las últimas 16 columnas (6..21)
-        keep_tail = 21 - 5  # 16
-        desc = " | ".join(parts[4: original_count - keep_tail])  # de col 5 hasta antes de las últimas 16
+        keep_tail = 21 - 5  # 16 últimas columnas (6..21)
+        desc = " | ".join(parts[4: original_count - keep_tail])
         parts = parts[:4] + [desc] + parts[original_count - keep_tail:]
         avisos.append(f"Se detectaron {original_count} campos; se fusionó el excedente en 'Descripción'.")
     if len(parts) < 21:
         faltan = 21 - len(parts)
         avisos.append(f"Se detectaron {len(parts)} campos; se completaron {faltan} vacíos.")
         parts += [""] * faltan
-
     parts = [p.strip() for p in parts]
     return parts, avisos
 
@@ -307,7 +297,32 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
         return f"{horas} horas {minutos} minutos"
     return ""
 
-# --- Reglas determinísticas de respaldo para Amenaza/Vulnerabilidad ---
+# --- Reubicador de códigos mal colocados (Causa/Amenaza) ---
+def reubicar_codigos_mal_colocados(fila: List[str]) -> list[str]:
+    movimientos = []
+    # Si Causa (18) trae un código, muévelo y limpia
+    if fila[18].strip() and CODE_RE.fullmatch(fila[18].strip()):
+        code = fila[18].strip()
+        if code in ID_AMENAZA_VALIDOS and not fila[19].strip():
+            fila[19] = code
+            movimientos.append("ID Amenaza <- Causa")
+        elif code in ID_VULN_VALIDOS and not fila[17].strip():
+            fila[17] = code
+            movimientos.append("Vulnerabilidad <- Causa")
+        fila[18] = ""
+    # Si Amenaza (21) trae un código, muévelo y limpia
+    if fila[20].strip() and CODE_RE.fullmatch(fila[20].strip()):
+        code = fila[20].strip()
+        if code in ID_AMENAZA_VALIDOS and not fila[19].strip():
+            fila[19] = code
+            movimientos.append("ID Amenaza <- Amenaza")
+        elif code in ID_VULN_VALIDOS and not fila[17].strip():
+            fila[17] = code
+            movimientos.append("Vulnerabilidad <- Amenaza")
+        fila[20] = ""
+    return movimientos
+
+# --- Inferencia determinística como respaldo ---
 _PAT_AMENAZA = [
     (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
     (r"(ransom|cifrad[oa].*archivo|encrypt(ed)? files?)", "3.5"),
@@ -321,7 +336,6 @@ _PAT_AMENAZA = [
     (r"(inundaci[oó]n)", "2.11"),
     (r"(ca[ií]da|no disponible|indisponibilidad|servicio.*no responde|reinici(ar|o) (servicio|servidor))", "4.1"),
 ]
-
 _PAT_VULN = [
     (r"(contraseñ|password|clave).*(d[eé]bil|compartid|reutiliz)", "4.1"),
     (r"(sin mfa|sin 2fa|mfa deshabilitad|autenticaci[oó]n.*d[eé]bil)", "4.3"),
@@ -356,13 +370,7 @@ def infer_vulnerabilidad(texto: str) -> str:
 # ---------------------------
 # Generador de CODIGO: INC-<día>-<mes>-<NNN>
 # ---------------------------
-CODIGO_REGEX = r"^INC-(\d{1,2})-(\d{1,2})-(\d{3})$"
-
 def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
-    """
-    Devuelve un código con formato: INC-<dia>-<mes>-<NNN>, reinicia correlativo por día.
-    - fecha_apertura: "YYYY-MM-DD HH:MM" o None -> si None, usa fecha actual
-    """
     dia, mes = None, None
     if fecha_apertura:
         try:
@@ -374,7 +382,7 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
         now = datetime.now()
         dia, mes = now.day, now.month
 
-    codigos = ws.col_values(1)  # Columna CODIGO
+    codigos = ws.col_values(1)
     patron = re.compile(rf"^INC-{dia}-{mes}-(\d{{3}})$")
     max_seq = 0
     for c in codigos:
@@ -389,7 +397,7 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
     seq = max_seq + 1
     candidato = f"INC-{dia}-{mes}-{seq:03d}"
     existentes = set(x.strip() for x in codigos if x)
-    while candidato in existentes:  # improbable, pero por si acaso
+    while candidato in existentes:
         seq += 1
         candidato = f"INC-{dia}-{mes}-{seq:03d}"
     return candidato
@@ -411,15 +419,10 @@ if st.button("Reportar", use_container_width=True):
     prompt = persona + user_question.strip()
 
     with st.spinner("Generando y validando la fila..."):
-        # Retry simple (hasta 2 intentos)
-        last_err = None
-        response_text = None
+        last_err, response_text = None, None
         for _ in range(2):
             try:
-                response = model.generate_content(
-                    [prompt],
-                    generation_config={"temperature": 0.2}  # menor aleatoriedad
-                )
+                response = model.generate_content([prompt], generation_config={"temperature": 0.2})
                 response_text = response.text if hasattr(response, "text") else str(response)
                 break
             except Exception as e:
@@ -431,7 +434,10 @@ if st.button("Reportar", use_container_width=True):
         cleaned = sanitize_text(response_text)
         fila, avisos = normalize_21_fields(cleaned)
 
-        # Validaciones de códigos (Vuln y Amenaza deben ser códigos válidos N.N)
+        # Reubicar si Gemini metió códigos en Causa/Amenaza
+        movimientos = reubicar_codigos_mal_colocados(fila)
+
+        # Validaciones de códigos
         fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)     # Vulnerabilidad
         fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)  # ID Amenaza
 
@@ -443,6 +449,10 @@ if st.button("Reportar", use_container_width=True):
         if not fila[17]:
             fila[17] = infer_vulnerabilidad(texto_ctx)
             fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)
+
+        # Enfoque estricto: Causa (19) y Amenaza (21) SIEMPRE vacías
+        fila[18] = ""
+        fila[20] = ""
 
         if not fila[17] or not fila[19]:
             st.error("Faltan códigos en Vulnerabilidad (18) o ID Amenaza (20). Ajusta el reporte o completa manualmente.")
@@ -477,8 +487,12 @@ if st.button("Reportar", use_container_width=True):
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
 
-        if avisos:
-            st.info(" | ".join(avisos))
+        # Info de correcciones automáticas (si las hubo)
+        avisos_extra = []
+        if movimientos:
+            avisos_extra.append("Se reubicaron códigos: " + ", ".join(movimientos))
+        if avisos or avisos_extra:
+            st.info(" | ".join(avisos + avisos_extra))
 
         # Guardado
         try:
