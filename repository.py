@@ -205,72 +205,60 @@ persona = f"""
 Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
 
 Reglas generales:
-- Usa el ORDEN EXACTO de columnas de abajo.
+- Usa el ORDEN EXACTO de las 21 columnas de abajo.
 - Si un campo llevaría |, reemplázalo por /.
 - Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
 - Zona horaria para horas actuales: America/La_Paz.
+- No reutilices ningún código que aparezca en este mismo texto como “ejemplo”. Selecciona SIEMPRE el código que mejor corresponda a lo descrito en el reporte.
 
 Columnas y formato:
-1. CODIGO → INC+HHMM (ej: INC0830). Si no hay hora explícita, usa hora actual.
+1. CODIGO → INC+HHMM (si no hay hora explícita, usa hora actual).
 2. Fecha y Hora de Apertura → YYYY-MM-DD HH:MM, solo si se menciona.
-3. Modo Reporte → usa solo valores válidos (Correo, Jira, Teléfono, Monitoreo, …).
+3. Modo Reporte → valores válidos (Correo, Jira, Teléfono, Monitoreo, …).
 4. Evento/ Incidente → Evento | Incidente.
 5. Descripción Evento/ Incidente → resumen claro y profesional.
 6. Sistema → (VPN, Correo, Active Directory, …).
 7. Area
 8. Ubicación
-9. Impacto → Alto | Medio | Bajo (valores válidos).
-10. Clasificación → usar solo valores válidos.
+9. Impacto → Alto | Medio | Bajo (según Definiciones).
+10. Clasificación → usar solo valores válidos de Definiciones.
 11. Acción Inmediata
 12. Solución
-13. Area de GTIC - Coordinando → Redes | Seguridad Informática | Soporte Técnico | Sistemas (u otra válida).
+13. Area de GTIC - Coordinando → (Redes, Seguridad Informática, Soporte Técnico, Sistemas, …).
 14. Encargado SI → solo si se menciona; no inventes nombres.
 15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona.
-16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura), si no, vacío.
+16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
 17. Estado → Cerrado | En investigación.
-18. Vulnerabilidad → SOLO CÓDIGO de “Guia Vuln” (ej: 4.39).
+18. Vulnerabilidad → SOLO un código con formato N.N tomado de la “Guia Vuln”.
 19. Causa → vacío.
-20. ID Amenaza → SOLO CÓDIGO de “Guia Amenazas” (ej: 3.5).
+20. ID Amenaza → SOLO un código con formato N.N tomado de la “Guia Amenazas”.
 21. Amenaza → vacío.
 
-Cómo decidir 18 (Vulnerabilidad) y 20 (ID Amenaza) — OBLIGATORIO:
-- Prioriza por evidencia:
-  A) Si hay señales de ataque (phishing, malware/ransomware, brute force, exfiltración, DDoS, SQLi, suplantación): usa una AMENAZA 3.x específica y una VULNERABILIDAD 4.x/1.x coherente (ej., 4.29 si faltan controles anti-malware; 1.6/1.4 si es falta de conciencia).
-  B) Si es caída/indisponibilidad sin evidencia de ataque: usa AMENAZA 4.x (falla tecnológica) o 2.x (ambiente) y VULNERABILIDAD 4.x (alta disponibilidad, monitoreo, recursos, etc.).
-  C) Si el problema nace de error humano o incumplimiento de políticas: VULNERABILIDAD 1.x / 2.x según corresponda y AMENAZA 1.x/3.3 si es ingeniería social.
-- Si varias opciones encajan, elige la MÁS ESPECÍFICA (el subcódigo que mejor explique la causa raíz).
-- Nunca dejes 18 ni 20 vacíos.
+Selección OBLIGATORIA de 18 (Vulnerabilidad) y 20 (ID Amenaza):
+- Si hay signos de ataque (phishing, malware/ransomware, fuerza bruta, exfiltración, DDoS, SQLi, suplantación): selecciona una Amenaza 3.x adecuada y una Vulnerabilidad 4.x/1.x coherente (controles débiles, falta de conciencia, etc.).
+- Si es caída/indisponibilidad sin evidencia de ataque: selecciona una Amenaza 4.x (falla tecnológica) o 2.x (ambiente) y una Vulnerabilidad 4.x que explique la causa raíz (alta disponibilidad, monitoreo, actualizaciones, etc.).
+- Si el problema nace de error humano o incumplimiento de políticas: Vulnerabilidad 1.x/2.x (conciencia/procesos) y Amenaza 1.x (personas) o 3.3 si hubo ingeniería social.
+- Elige la opción MÁS ESPECÍFICA que explique la raíz; nunca dejes 18 ni 20 vacíos.
 
-Mapa rápido de palabras clave → candidatos (orientativo, no exhaustivo):
-- “phishing”, “smishing”, “vishing”, “ingeniería social” → Amenaza 3.3
-- “malware”, “virus”, “troyano” → Amenaza 3.11
-- “ransomware”, “cifrado de archivos” → Amenaza 3.5
-- “DDoS”, “denegación de servicio” → Amenaza 3.12
-- “suplantación”, “impersonación”, “account takeover” → Amenaza 3.7
-- “corte de energía” → Amenaza 4.6
-- “temperatura/humedad alta”, “ambiente” → Amenaza 2.2
-- “incendio” → Amenaza 2.10 ; “inundación” → Amenaza 2.11
-- “reiniciar servidor/servicio”, “caída sin ataque”, “falla técnica” → Amenaza 4.1 (u otra 4.x más precisa si el texto lo indica)
+Pistas de palabras clave (orientativo):
+- phishing/smishing/vishing/ingeniería social → Amenaza 3.x (3.3); contraseñas débiles/sin MFA → Vulnerabilidad 4.1/4.3
+- malware/virus/ransomware/cifrado de archivos → Amenaza 3.11/3.5; falta de antimalware → Vulnerabilidad 4.29
+- DDoS/denegación de servicio → Amenaza 3.12
+- caída/servicio no responde/reiniciar servidor → Amenaza 4.x; sin HA/cluster → Vulnerabilidad 4.39
+- parches/obsolescencia → Vulnerabilidad 4.10/4.11/5.10
+- sin monitoreo/alertas → Vulnerabilidad 4.19/4.22
+- sin backups → Vulnerabilidad 4.30
+- incendio/inundación/ambiente → Amenaza 2.10/2.11/2.2
 
-- “contraseña débil/compartida/gestión de claves” → Vulnerabilidad 4.1
-- “sin MFA/autenticación débil” → Vulnerabilidad 4.3
-- “permisos/roles/segregación” → Vulnerabilidad 4.2/4.4/2.1/4.5 (según corresponda)
-- “software desactualizado/parche pendiente/obsoleto” → Vulnerabilidad 4.10/4.11/5.10
-- “sin antivirus/antimalware/EDR” → Vulnerabilidad 4.29
-- “sin alta disponibilidad/cluster/HA” → Vulnerabilidad 4.39
-- “sin monitoreo/alertas” → Vulnerabilidad 4.19/4.22
-- “sin respaldos/backups” → Vulnerabilidad 4.30
-- “falta de conciencia/formación” → Vulnerabilidad 1.6/1.4/1.11 (según el contexto)
-
-Guía de Vulnerabilidades (para el campo 18):
+Guía de Vulnerabilidades:
 {guia_vuln}
 
-Guía de Amenazas (para el campo 20):
+Guía de Amenazas:
 {guia_amenazas}
 
 [REPORTE DE ENTRADA]:
-
 """
+
 
 # ---------------------------
 # Utilidades de saneamiento / validación
@@ -410,6 +398,7 @@ if st.button("Reportar", use_container_width=True):
         # Descarga CSV de la fila (útil para auditoría)
         csv_line = "|".join(fila)
         st.download_button("Descargar fila (pipe-separated)", data=csv_line, file_name=f"{fila[0] or 'INC'}_fila.txt", mime="text/plain")
+
 
 
 
