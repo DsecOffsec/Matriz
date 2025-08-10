@@ -202,66 +202,74 @@ ID_AMENAZA_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_amenazas))
 # Prompt (corregido: 1 sola etiqueta de entrada)
 # ---------------------------
 persona = f"""
-Eres un asistente experto en seguridad informática. Tu tarea es transformar un reporte de incidente en lenguaje natural en una fila estructurada para una hoja de cálculo con exactamente 21 columnas, en este orden y con estos nombres:
+Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
 
-1. CODIGO
-   - Formato: "INC" + hora en HHMM (ej. INC0830). Si no hay hora, usa hora actual.
-2. Fecha y Hora de Apertura
-   - Formato: YYYY-MM-DD HH:MM, solo si se menciona explícitamente; si no, vacío.
-3. Modo Reporte
-   - Usa solo los valores válidos definidos en la hoja "Definiciones" (ej: "Correo", "Jira", "Teléfono", "Monitoreo").
-4. Evento/ Incidente
-   - "Evento" si es una alerta puntual o "Incidente" si es una afectación mayor.
-5. Descripción Evento/ Incidente
-   - Resumen claro y profesional del incidente.
-6. Sistema
-   - Sistema afectado (VPN, Correo, Active Directory, etc.).
+Reglas generales:
+- Usa el ORDEN EXACTO de columnas de abajo.
+- Si un campo llevaría |, reemplázalo por /.
+- Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
+- Zona horaria para horas actuales: America/La_Paz.
+
+Columnas y formato:
+1. CODIGO → INC+HHMM (ej: INC0830). Si no hay hora explícita, usa hora actual.
+2. Fecha y Hora de Apertura → YYYY-MM-DD HH:MM, solo si se menciona.
+3. Modo Reporte → usa solo valores válidos (Correo, Jira, Teléfono, Monitoreo, …).
+4. Evento/ Incidente → Evento | Incidente.
+5. Descripción Evento/ Incidente → resumen claro y profesional.
+6. Sistema → (VPN, Correo, Active Directory, …).
 7. Area
-   - Área institucional afectada o que reportó el incidente.
 8. Ubicación
-   - Sede o ubicación geográfica, si se menciona; si no, vacío.
-9. Impacto
-   - Alto, Medio o Bajo, según criterios de la hoja "Definiciones".
-10. Clasificación
-    - Usa únicamente las clasificaciones válidas de la hoja "Definiciones".
+9. Impacto → Alto | Medio | Bajo (valores válidos).
+10. Clasificación → usar solo valores válidos.
 11. Acción Inmediata
-    - Acción realizada antes de reportar (ej. reinicio, cambio de contraseña), si aplica.
 12. Solución
-    - Breve descripción de cómo se resolvió.
-13. Area de GTIC - Coordinando
-    - Área que lideró la solución (Redes, Seguridad Informática, Soporte Técnico, etc.).
-14. Encargado SI
-    - Persona de Seguridad Informática si se menciona; si no, vacío.
-15. Fecha y Hora de Cierre
-    - Formato: YYYY-MM-DD HH:MM, solo si se menciona explícitamente; si no, vacío.
-16. Tiempo Solución
-    - Calcula la diferencia entre Apertura y Cierre como "X horas Y minutos"; si no hay Cierre, deja vacío.
-17. Estado
-    - "Cerrado" si se resolvió, "En investigación" si sigue activo.
-18. Vulnerabilidad
-    - SOLO el código de la hoja "Guia Vuln" (ej. "1.3"), sin texto extra.
-19. Causa
-    - Vacío (se autocompleta en Excel).
-20. ID Amenaza
-    - SOLO el código de la hoja "Guia Amenazas" (ej. "3.5"), sin texto extra.
-21. Amenaza
-    - Vacío (se autocompleta en Excel).
+13. Area de GTIC - Coordinando → Redes | Seguridad Informática | Soporte Técnico | Sistemas (u otra válida).
+14. Encargado SI → solo si se menciona; no inventes nombres.
+15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona.
+16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura), si no, vacío.
+17. Estado → Cerrado | En investigación.
+18. Vulnerabilidad → SOLO CÓDIGO de “Guia Vuln” (ej: 4.39).
+19. Causa → vacío.
+20. ID Amenaza → SOLO CÓDIGO de “Guia Amenazas” (ej: 3.5).
+21. Amenaza → vacío.
 
-INSTRUCCIONES IMPORTANTES:
-- Devuelve UNA SOLA LÍNEA sin comillas, sin saltos de línea, sin texto extra, con exactamente 21 valores separados por "|".
-- Si algún dato no puede deducirse, deja el campo vacío, pero conserva su posición.
-- Usa solo valores válidos de las hojas "Definiciones", "Guia Vuln" y "Guia Amenazas".
-- No incluyas explicaciones, encabezados ni formato adicional.
-- 'Causa' y 'Amenaza' deben ir vacíos.
+Cómo decidir 18 (Vulnerabilidad) y 20 (ID Amenaza) — OBLIGATORIO:
+- Prioriza por evidencia:
+  A) Si hay señales de ataque (phishing, malware/ransomware, brute force, exfiltración, DDoS, SQLi, suplantación): usa una AMENAZA 3.x específica y una VULNERABILIDAD 4.x/1.x coherente (ej., 4.29 si faltan controles anti-malware; 1.6/1.4 si es falta de conciencia).
+  B) Si es caída/indisponibilidad sin evidencia de ataque: usa AMENAZA 4.x (falla tecnológica) o 2.x (ambiente) y VULNERABILIDAD 4.x (alta disponibilidad, monitoreo, recursos, etc.).
+  C) Si el problema nace de error humano o incumplimiento de políticas: VULNERABILIDAD 1.x / 2.x según corresponda y AMENAZA 1.x/3.3 si es ingeniería social.
+- Si varias opciones encajan, elige la MÁS ESPECÍFICA (el subcódigo que mejor explique la causa raíz).
+- Nunca dejes 18 ni 20 vacíos.
 
+Mapa rápido de palabras clave → candidatos (orientativo, no exhaustivo):
+- “phishing”, “smishing”, “vishing”, “ingeniería social” → Amenaza 3.3
+- “malware”, “virus”, “troyano” → Amenaza 3.11
+- “ransomware”, “cifrado de archivos” → Amenaza 3.5
+- “DDoS”, “denegación de servicio” → Amenaza 3.12
+- “suplantación”, “impersonación”, “account takeover” → Amenaza 3.7
+- “corte de energía” → Amenaza 4.6
+- “temperatura/humedad alta”, “ambiente” → Amenaza 2.2
+- “incendio” → Amenaza 2.10 ; “inundación” → Amenaza 2.11
+- “reiniciar servidor/servicio”, “caída sin ataque”, “falla técnica” → Amenaza 4.1 (u otra 4.x más precisa si el texto lo indica)
 
-GUIA DE VULNERABILIDADES:
+- “contraseña débil/compartida/gestión de claves” → Vulnerabilidad 4.1
+- “sin MFA/autenticación débil” → Vulnerabilidad 4.3
+- “permisos/roles/segregación” → Vulnerabilidad 4.2/4.4/2.1/4.5 (según corresponda)
+- “software desactualizado/parche pendiente/obsoleto” → Vulnerabilidad 4.10/4.11/5.10
+- “sin antivirus/antimalware/EDR” → Vulnerabilidad 4.29
+- “sin alta disponibilidad/cluster/HA” → Vulnerabilidad 4.39
+- “sin monitoreo/alertas” → Vulnerabilidad 4.19/4.22
+- “sin respaldos/backups” → Vulnerabilidad 4.30
+- “falta de conciencia/formación” → Vulnerabilidad 1.6/1.4/1.11 (según el contexto)
+
+Guía de Vulnerabilidades (para el campo 18):
 {guia_vuln}
 
-GUIA DE AMENAZAS:
+Guía de Amenazas (para el campo 20):
 {guia_amenazas}
 
 [REPORTE DE ENTRADA]:
+
 """
 
 # ---------------------------
@@ -402,6 +410,7 @@ if st.button("Reportar", use_container_width=True):
         # Descarga CSV de la fila (útil para auditoría)
         csv_line = "|".join(fila)
         st.download_button("Descargar fila (pipe-separated)", data=csv_line, file_name=f"{fila[0] or 'INC'}_fila.txt", mime="text/plain")
+
 
 
 
