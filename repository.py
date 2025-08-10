@@ -12,7 +12,7 @@ st.title("MATRIZ DE REPORTES DSEC")
 # Conexiones y configuración
 # ---------------------------
 gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
-SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"  # opcional: mover a secrets
+SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"  # si puedes, pásalo a secrets
 sh = gc.open_by_key(SHEET_ID)
 ws = sh.worksheet("Reportes")
 
@@ -194,12 +194,12 @@ guia_amenazas = """
 4.7 - Acceso a información confidencial y de uso interno desde componentes tecnológicos reciclados o desechados.
 """
 
-# Extrae conjuntos válidos de IDs (p.ej. "1.3")
+# Conjuntos válidos de IDs (p.ej. "1.3")
 ID_VULN_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_vuln))
 ID_AMENAZA_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_amenazas))
 
 # ---------------------------
-# Prompt (corregido: 1 sola etiqueta de entrada)
+# Prompt robusto (CODIGO lo genera el sistema)
 # ---------------------------
 persona = f"""
 Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
@@ -209,10 +209,9 @@ Reglas generales:
 - Si un campo llevaría |, reemplázalo por /.
 - Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
 - Zona horaria para horas actuales: America/La_Paz.
-- No reutilices ningún código que aparezca en este mismo texto como “ejemplo”. Selecciona SIEMPRE el código que mejor corresponda a lo descrito en el reporte.
 
 Columnas y formato:
-1. CODIGO → INC+HHMM (si no hay hora explícita, usa hora actual).
+1. CODIGO → (dejar vacío; lo genera el sistema).
 2. Fecha y Hora de Apertura → YYYY-MM-DD HH:MM, solo si se menciona.
 3. Modo Reporte → valores válidos (Correo, Jira, Teléfono, Monitoreo, …).
 4. Evento/ Incidente → Evento | Incidente.
@@ -238,17 +237,7 @@ Selección OBLIGATORIA de 18 (Vulnerabilidad) y 20 (ID Amenaza):
 - Si hay signos de ataque (phishing, malware/ransomware, fuerza bruta, exfiltración, DDoS, SQLi, suplantación): selecciona una Amenaza 3.x adecuada y una Vulnerabilidad 4.x/1.x coherente (controles débiles, falta de conciencia, etc.).
 - Si es caída/indisponibilidad sin evidencia de ataque: selecciona una Amenaza 4.x (falla tecnológica) o 2.x (ambiente) y una Vulnerabilidad 4.x que explique la causa raíz (alta disponibilidad, monitoreo, actualizaciones, etc.).
 - Si el problema nace de error humano o incumplimiento de políticas: Vulnerabilidad 1.x/2.x (conciencia/procesos) y Amenaza 1.x (personas) o 3.3 si hubo ingeniería social.
-- Elige la opción MÁS ESPECÍFICA que explique la raíz; nunca dejes 18 ni 20 vacíos.
-
-Pistas de palabras clave (orientativo):
-- phishing/smishing/vishing/ingeniería social → Amenaza 3.x (3.3); contraseñas débiles/sin MFA → Vulnerabilidad 4.1/4.3
-- malware/virus/ransomware/cifrado de archivos → Amenaza 3.11/3.5; falta de antimalware → Vulnerabilidad 4.29
-- DDoS/denegación de servicio → Amenaza 3.12
-- caída/servicio no responde/reiniciar servidor → Amenaza 4.x; sin HA/cluster → Vulnerabilidad 4.39
-- parches/obsolescencia → Vulnerabilidad 4.10/4.11/5.10
-- sin monitoreo/alertas → Vulnerabilidad 4.19/4.22
-- sin backups → Vulnerabilidad 4.30
-- incendio/inundación/ambiente → Amenaza 2.10/2.11/2.2
+- Elige la opción MÁS ESPECÍFICA; nunca dejes 18 ni 20 vacíos.
 
 Guía de Vulnerabilidades:
 {guia_vuln}
@@ -259,13 +248,11 @@ Guía de Amenazas:
 [REPORTE DE ENTRADA]:
 """
 
-
 # ---------------------------
 # Utilidades de saneamiento / validación
 # ---------------------------
 def sanitize_text(s: str) -> str:
     s = s.strip()
-    # quita fences y markdown comunes
     s = re.sub(r"^```.*?\n", "", s, flags=re.DOTALL)  # inicio de bloque
     s = re.sub(r"```$", "", s)
     s = s.replace("```", "")
@@ -274,7 +261,6 @@ def sanitize_text(s: str) -> str:
     # intenta quedarte con la primera línea que contenga pipes
     m = re.search(r"[^|\n]*\|[^|\n]*\|", s)
     if m:
-        # recorta desde el primer pipe encontrado
         s = s[m.start():]
     return s.strip().strip('"').strip()
 
@@ -282,20 +268,19 @@ def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     """Devuelve (fila_21_campos, avisos_de_correccion)."""
     avisos = []
     parts = [p.strip() for p in raw.split("|")]
-    # elimina vacíos por pasado de barras circunstanciales
-    # pero NO elimines vacíos legítimos; solo recorte extremos
-    # (no hacemos strip de vacíos intermedios)
-    # Ajuste de cantidad
-    if len(parts) > 21:
-        # une el excedente en la columna 5 (Descripción, index 4)
-        desc_extra = " | ".join(parts[4:len(parts)-(21-5)])
-        nueva = parts[:4] + [desc_extra] + parts[len(parts)-(21-5):]
-        parts = nueva
-        avisos.append(f"Se detectaron {len(parts)}+ campos; se fusionó el excedente en 'Descripción'.")
+    original_count = len(parts)
+
+    if original_count > 21:
+        # Mantén 1..4, colapsa extras en 5 (Descripción), y conserva las últimas 16 columnas (6..21)
+        keep_tail = 21 - 5  # 16
+        desc = " | ".join(parts[4: original_count - keep_tail])  # de col 5 hasta antes de las últimas 16
+        parts = parts[:4] + [desc] + parts[original_count - keep_tail:]
+        avisos.append(f"Se detectaron {original_count} campos; se fusionó el excedente en 'Descripción'.")
     if len(parts) < 21:
-        avisos.append(f"Se detectaron {len(parts)} campos; se completaron {21-len(parts)} vacíos.")
-        parts += [""] * (21 - len(parts))
-    # trim final a cada campo
+        faltan = 21 - len(parts)
+        avisos.append(f"Se detectaron {len(parts)} campos; se completaron {faltan} vacíos.")
+        parts += [""] * faltan
+
     parts = [p.strip() for p in parts]
     return parts, avisos
 
@@ -322,10 +307,101 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
         return f"{horas} horas {minutos} minutos"
     return ""
 
+# --- Reglas determinísticas de respaldo para Amenaza/Vulnerabilidad ---
+_PAT_AMENAZA = [
+    (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
+    (r"(ransom|cifrad[oa].*archivo|encrypt(ed)? files?)", "3.5"),
+    (r"(malware|virus|troyano|payload|backdoor)", "3.11"),
+    (r"(denegaci[oó]n|ddos)", "3.12"),
+    (r"(intercept|sniff|escucha)", "3.4"),
+    (r"(acceso no autorizado|elevaci[oó]n de privilegios)", "3.9"),
+    (r"(corte de energ[ií]a|apag[oó]n|fallas? el[eé]ctric[ao])", "4.6"),
+    (r"(temperatura|humedad)", "2.2"),
+    (r"(incendio)", "2.10"),
+    (r"(inundaci[oó]n)", "2.11"),
+    (r"(ca[ií]da|no disponible|indisponibilidad|servicio.*no responde|reinici(ar|o) (servicio|servidor))", "4.1"),
+]
+
+_PAT_VULN = [
+    (r"(contraseñ|password|clave).*(d[eé]bil|compartid|reutiliz)", "4.1"),
+    (r"(sin mfa|sin 2fa|mfa deshabilitad|autenticaci[oó]n.*d[eé]bil)", "4.3"),
+    (r"(permisos|roles|segregaci[oó]n|separaci[oó]n de deberes)", "4.2"),
+    (r"(software|sistema).*(desactualiz|sin parche|obsolet)", "4.10"),
+    (r"(parche|actualizaci[oó]n) (pendiente|faltante)", "4.11"),
+    (r"(antivirus|antimalware|edr|xdr) (ausente|desactivado|no instalado)", "4.29"),
+    (r"(alta disponibilidad|cluster|ha|redundan|punto [úu]nico de falla)", "4.39"),
+    (r"(sin monitoreo|sin alertas|no hay alertas|no se monitorea)", "4.19"),
+    (r"(capacidad|recurso(s)? de almacenamiento|cpu|memoria) (insuficiente|saturad)", "4.21"),
+    (r"(respaldo|backup|copia(s)? de seguridad) (ausente|no configurad|no se realiza)", "4.30"),
+]
+
+def infer_amenaza(texto: str) -> str:
+    t = texto.lower()
+    for pat, code in _PAT_AMENAZA:
+        if re.search(pat, t):
+            return code
+    if re.search(r"(ca[ií]da|no disponible|indisponibilidad|reinici(ar|o))", t):
+        return "4.1"
+    return ""
+
+def infer_vulnerabilidad(texto: str) -> str:
+    t = texto.lower()
+    for pat, code in _PAT_VULN:
+        if re.search(pat, t):
+            return code
+    if re.search(r"(ca[ií]da|no disponible|indisponibilidad)", t):
+        return "4.39"
+    return ""
+
+# ---------------------------
+# Generador de CODIGO: INC-<día>-<mes>-<NNN>
+# ---------------------------
+CODIGO_REGEX = r"^INC-(\d{1,2})-(\d{1,2})-(\d{3})$"
+
+def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
+    """
+    Devuelve un código con formato: INC-<dia>-<mes>-<NNN>, reinicia correlativo por día.
+    - fecha_apertura: "YYYY-MM-DD HH:MM" o None -> si None, usa fecha actual
+    """
+    dia, mes = None, None
+    if fecha_apertura:
+        try:
+            dt = datetime.strptime(fecha_apertura.strip(), "%Y-%m-%d %H:%M")
+            dia, mes = dt.day, dt.month
+        except Exception:
+            pass
+    if dia is None:
+        now = datetime.now()
+        dia, mes = now.day, now.month
+
+    codigos = ws.col_values(1)  # Columna CODIGO
+    patron = re.compile(rf"^INC-{dia}-{mes}-(\d{{3}})$")
+    max_seq = 0
+    for c in codigos:
+        if not c:
+            continue
+        m = patron.match(c.strip())
+        if m:
+            n = int(m.group(1))
+            if n > max_seq:
+                max_seq = n
+
+    seq = max_seq + 1
+    candidato = f"INC-{dia}-{mes}-{seq:03d}"
+    existentes = set(x.strip() for x in codigos if x)
+    while candidato in existentes:  # improbable, pero por si acaso
+        seq += 1
+        candidato = f"INC-{dia}-{mes}-{seq:03d}"
+    return candidato
+
 # ---------------------------
 # UI
 # ---------------------------
-user_question = st.text_area("Describe el incidente:", height=140, placeholder="Ej: A las 08:30 usuarios de Contabilidad no pueden autenticarse en AD...")
+user_question = st.text_area(
+    "Describe el incidente:",
+    height=140,
+    placeholder="Ej: A las 08:30 usuarios de Contabilidad no pueden autenticarse en AD..."
+)
 
 if st.button("Reportar", use_container_width=True):
     if not user_question.strip():
@@ -340,7 +416,10 @@ if st.button("Reportar", use_container_width=True):
         response_text = None
         for _ in range(2):
             try:
-                response = model.generate_content([prompt])
+                response = model.generate_content(
+                    [prompt],
+                    generation_config={"temperature": 0.2}  # menor aleatoriedad
+                )
                 response_text = response.text if hasattr(response, "text") else str(response)
                 break
             except Exception as e:
@@ -352,20 +431,34 @@ if st.button("Reportar", use_container_width=True):
         cleaned = sanitize_text(response_text)
         fila, avisos = normalize_21_fields(cleaned)
 
-        # Validaciones de códigos
-        fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)  # Vulnerabilidad
+        # Validaciones de códigos (Vuln y Amenaza deben ser códigos válidos N.N)
+        fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)     # Vulnerabilidad
         fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)  # ID Amenaza
 
-        # Autocálculo de Tiempo de Solución si procede (col 16 = index 15 es Cierre; 2 = Apertura index 1; 16 = Tiempo index 15? OJO)
-        # Índices (base 0):
-        # 1: CODIGO(0)  2:Apertura(1)  ... 15:Cierre(14)  16:Tiempo(15)
+        # Fallback determinístico si faltan
+        texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
+        if not fila[19]:
+            fila[19] = infer_amenaza(texto_ctx)
+            fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)
+        if not fila[17]:
+            fila[17] = infer_vulnerabilidad(texto_ctx)
+            fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)
+
+        if not fila[17] or not fila[19]:
+            st.error("Faltan códigos en Vulnerabilidad (18) o ID Amenaza (20). Ajusta el reporte o completa manualmente.")
+            st.stop()
+
+        # Autocálculo de Tiempo de Solución si procede
         if not fila[15].strip():
             fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
 
-        # Reglas de negocio menores
-        # Estado (17 = index 16) si falta, infiérelo por presencia de Cierre
+        # Estado por defecto si falta
         if not fila[16].strip():
             fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
+
+        # Generar CODIGO backend (col 1) según Fecha Apertura (col 2)
+        codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
+        fila[0] = codigo
 
         # Confirmación final de 21 campos
         if len(fila) != 21:
@@ -375,12 +468,11 @@ if st.button("Reportar", use_container_width=True):
 
         # Vista previa
         columnas = [
-             "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/ Incidente","Descripción Evento/ Incidente",
-             "Sistema","Area","Ubicación","Impacto","Clasificación","Acción Inmediata","Solución",
-             "Area de GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo Solución",
-             "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza"
-         ]
-
+            "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/ Incidente","Descripción Evento/ Incidente",
+            "Sistema","Area","Ubicación","Impacto","Clasificación","Acción Inmediata","Solución",
+            "Area de GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo Solución",
+            "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza"
+        ]
         df_prev = pd.DataFrame([fila], columns=columnas)
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
@@ -395,11 +487,11 @@ if st.button("Reportar", use_container_width=True):
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
 
-        # Descarga CSV de la fila (útil para auditoría)
+        # Descarga de auditoría
         csv_line = "|".join(fila)
-        st.download_button("Descargar fila (pipe-separated)", data=csv_line, file_name=f"{fila[0] or 'INC'}_fila.txt", mime="text/plain")
-
-
-
-
-
+        st.download_button(
+            "Descargar fila (pipe-separated)",
+            data=csv_line,
+            file_name=f"{fila[0] or 'INC'}_fila.txt",
+            mime="text/plain"
+        )
