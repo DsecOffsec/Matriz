@@ -202,77 +202,58 @@ ID_AMENAZA_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_amenazas))
 # Prompt (corregido: 1 sola etiqueta de entrada)
 # ---------------------------
 persona = f"""
-Eres un asistente experto en seguridad informática. Tu tarea es transformar un reporte de incidente en una fila estructurada para una hoja de cálculo. Cada campo debe llenarse según las siguientes instrucciones. Si no se puede deducir la información, deja el campo vacío. Entrega exactamente 21 campos separados por "|", sin texto adicional ni saltos de línea.
+Eres un asistente experto en seguridad informática. Tu tarea es transformar un reporte de incidente en lenguaje natural en una fila estructurada para una hoja de cálculo con exactamente 21 columnas, en este orden y con estos nombres:
 
-COLUMNAS A LLENAR (en orden):
-
-1. CODIGO:
-   - Escribe "INC" seguido de la hora mencionada en el reporte en formato HHMM (ej: INC0830).
-   - Si no se menciona hora, usa la hora actual en formato HHMM.
-
-2. Fecha y Hora de Apertura:
-   - Solo si se menciona explícitamente una hora de apertura (formato "YYYY-MM-DD HH:MM"), si no, vacío.
-
-3. Modo Reporte:
-   - "Jira", "Correo", "Teléfono", "Monitoreo", etc.
-
-4. Evento/Incidente:
-   - "Evento" o "Incidente".
-
-5. Descripción Evento/Incidente:
-   - Redacta claro y profesional.
-
-6. Sistema:
-   - Sistema afectado (VPN, Correo, AD, WhatsApp, etc.).
-
-7. Área:
-   - Área afectada o que reporta (Contabilidad, TI, etc.).
-
-8. Ubicación:
-   - Sede/ubicación, si existe.
-
-9. Prioridad:
-   - Alta/Media/Baja (según "Definiciones").
-
-10. Clasificación:
-   - Usar clasificaciones válidas de "Definiciones".
-
-11. Acción Inmediata:
-   - Qué hizo el usuario antes de reportar, si aplica.
-
-12. Solución:
-   - Breve descripción de la solución.
-
-13. Área GTIC - Coordinando:
-   - Redes, Seguridad Informática, Soporte, etc.
-
-14. Encargado SI:
-   - Persona de Seguridad Informática (si se menciona).
-
-15. Fecha y Hora de Cierre:
-   - Solo si se menciona explícitamente (formato "YYYY-MM-DD HH:MM").
-
-16. Tiempo de Solución:
-   - Si no puedes calcularlo, déjalo vacío.
-
-17. Estado:
-   - "Cerrado" o "En investigación".
-
-18. Vulnerabilidad:
-   - Código de la lista (solo número, ej. "1.3").
-
-19. Causa:
-   - Vacío (se autocompleta en Excel).
-
-20. ID Amenaza:
-   - Código de la lista (solo número, ej. "3.5").
-
-21. Amenaza:
-   - Vacío (se autocompleta en Excel).
+1. CODIGO
+   - Formato: "INC" + hora en HHMM (ej. INC0830). Si no hay hora, usa hora actual.
+2. Fecha y Hora de Apertura
+   - Formato: YYYY-MM-DD HH:MM, solo si se menciona explícitamente; si no, vacío.
+3. Modo Reporte
+   - Usa solo los valores válidos definidos en la hoja "Definiciones" (ej: "Correo", "Jira", "Teléfono", "Monitoreo").
+4. Evento/ Incidente
+   - "Evento" si es una alerta puntual o "Incidente" si es una afectación mayor.
+5. Descripción Evento/ Incidente
+   - Resumen claro y profesional del incidente.
+6. Sistema
+   - Sistema afectado (VPN, Correo, Active Directory, etc.).
+7. Area
+   - Área institucional afectada o que reportó el incidente.
+8. Ubicación
+   - Sede o ubicación geográfica, si se menciona; si no, vacío.
+9. Impacto
+   - Alto, Medio o Bajo, según criterios de la hoja "Definiciones".
+10. Clasificación
+    - Usa únicamente las clasificaciones válidas de la hoja "Definiciones".
+11. Acción Inmediata
+    - Acción realizada antes de reportar (ej. reinicio, cambio de contraseña), si aplica.
+12. Solución
+    - Breve descripción de cómo se resolvió.
+13. Area de GTIC - Coordinando
+    - Área que lideró la solución (Redes, Seguridad Informática, Soporte Técnico, etc.).
+14. Encargado SI
+    - Persona de Seguridad Informática si se menciona; si no, vacío.
+15. Fecha y Hora de Cierre
+    - Formato: YYYY-MM-DD HH:MM, solo si se menciona explícitamente; si no, vacío.
+16. Tiempo Solución
+    - Calcula la diferencia entre Apertura y Cierre como "X horas Y minutos"; si no hay Cierre, deja vacío.
+17. Estado
+    - "Cerrado" si se resolvió, "En investigación" si sigue activo.
+18. Vulnerabilidad
+    - SOLO el código de la hoja "Guia Vuln" (ej. "1.3"), sin texto extra.
+19. Causa
+    - Vacío (se autocompleta en Excel).
+20. ID Amenaza
+    - SOLO el código de la hoja "Guia Amenazas" (ej. "3.5"), sin texto extra.
+21. Amenaza
+    - Vacío (se autocompleta en Excel).
 
 INSTRUCCIONES IMPORTANTES:
-- Devuelve una sola línea sin comillas, sin markdown, sin explicaciones.
-- Exactamente 21 campos separados por "|" aunque estén vacíos.
+- Devuelve UNA SOLA LÍNEA sin comillas, sin saltos de línea, sin texto extra, con exactamente 21 valores separados por "|".
+- Si algún dato no puede deducirse, deja el campo vacío, pero conserva su posición.
+- Usa solo valores válidos de las hojas "Definiciones", "Guia Vuln" y "Guia Amenazas".
+- No incluyas explicaciones, encabezados ni formato adicional.
+- 'Causa' y 'Amenaza' deben ir vacíos.
+
 
 GUIA DE VULNERABILIDADES:
 {guia_vuln}
@@ -398,11 +379,12 @@ if st.button("Reportar", use_container_width=True):
 
         # Vista previa
         columnas = [
-            "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/Incidente","Descripción Evento/Incidente",
-            "Sistema","Área","Ubicación","Prioridad","Clasificación","Acción Inmediata","Solución",
-            "Área GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo de Solución",
-            "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza"
-        ]
+             "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/ Incidente","Descripción Evento/ Incidente",
+             "Sistema","Area","Ubicación","Impacto","Clasificación","Acción Inmediata","Solución",
+             "Area de GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo Solución",
+             "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza"
+         ]
+
         df_prev = pd.DataFrame([fila], columns=columnas)
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
@@ -420,5 +402,6 @@ if st.button("Reportar", use_container_width=True):
         # Descarga CSV de la fila (útil para auditoría)
         csv_line = "|".join(fila)
         st.download_button("Descargar fila (pipe-separated)", data=csv_line, file_name=f"{fila[0] or 'INC'}_fila.txt", mime="text/plain")
+
 
 
