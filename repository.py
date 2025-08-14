@@ -26,14 +26,14 @@ TZ = ZoneInfo("America/La_Paz")
 st.markdown("""
 ### 📝 Instrucciones para registrar un incidente
 
-Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos obligatorios:
+Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos **obligatorios**:
 
-1. **Fecha y hora de apertura** — formato `YYYY-MM-DD HH:MM` o con hora y AM/PM.  
-2. **Sistema afectado** — por ejemplo: Correo, VPN, Active Directory, ERP, etc.  
+1. **Fecha y hora de apertura** — la hora de inicio del incidente/alerta con hora y AM/PM.  
+2. **Sistema afectado** — por ejemplo: Correo, VPN, Active Directory, Firewall, etc.  
 3. **Área afectada** — el departamento o unidad donde se detectó el problema.  
-4. **Acción inmediata tomada** — lo que se hizo al momento para mitigar el problema.  
+4. **Acción inmediata tomada** — lo que hizo el usuario para mitigar el problema.  
 5. **Solución aplicada** — acción final que resolvió el incidente.  
-6. **Área de GTIC que coordinó** — Redes, Seguridad Informática, Soporte Técnico, etc.  
+6. **Área de GTIC que coordinó** — Infrestructura, Seguridad, Soporte Técnico, etc.  
 7. **Fecha y hora de cierre** — cuando se resolvió el incidente.
 
 `
@@ -576,6 +576,7 @@ if st.button("Reportar", use_container_width=True):
             file_name=f"{fila[0] or 'INC'}_fila.txt",
             mime="text/plain"
         )
+
 
 
 
