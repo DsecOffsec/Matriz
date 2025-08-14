@@ -450,7 +450,12 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
 user_question = st.text_area(
     "Describe el incidente:",
     height=160,
-    placeholder="Ej: A las 08:45 el área de Contabilidad no puede acceder al correo..."
+    placeholder="Ej:A las 08:45 el área de Contabilidad reporta por Correo 
+    que no puede acceder al sistema de Correo corporativo. Como acción inmediata,
+    el usuario reinició el equipo y Mesa de Ayuda validó conectividad sin resultados.
+    El departamenteo la DESC coordinó la atención y reinició el servicio de Correo en el servidor, 
+    verificando autenticación y entrega de mensajes. A las 10:15 el servicio quedó restablecido y se cerró el incidente.
+"
 )
 
 if st.button("Reportar", use_container_width=True):
@@ -558,3 +563,4 @@ if st.button("Reportar", use_container_width=True):
             file_name=f"{fila[0] or 'INC'}_fila.txt",
             mime="text/plain"
         )
+
