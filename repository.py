@@ -35,8 +35,6 @@ Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos
 5. **Solución aplicada** — acción final que resolvió el incidente.  
 6. **Área de GTIC que coordinó** — Infrestructura, Seguridad, Soporte Técnico, etc.  
 7. **Fecha y hora de cierre** — cuando se resolvió el incidente.
-
-`
 """)
 # ---------------------------
 # Guías (texto de referencia)
@@ -576,6 +574,7 @@ if st.button("Reportar", use_container_width=True):
             file_name=f"{fila[0] or 'INC'}_fila.txt",
             mime="text/plain"
         )
+
 
 
 
