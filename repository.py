@@ -231,7 +231,7 @@ CLASIF_CANON = {
 CLASIF_TEXTO = "\n".join([f"- {v}" for v in CLASIF_CANON.values()])
 
 # ---------------------------
-# Prompt (NO obliga 18/20)
+# Prompt (CODIGO lo genera backend y no se inventan fechas)
 # ---------------------------
 persona = f"""
 Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
@@ -239,7 +239,7 @@ Eres un asistente experto en seguridad informática. Convierte el reporte en UNA
 Reglas:
 - Usa el ORDEN EXACTO de las 21 columnas de abajo.
 - Si un campo llevaría |, reemplázalo por /.
-- Si no puedes deducir un valor, déjalo vacío (no inventes).
+- Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
 - Zona horaria: America/La_Paz.
 - NO inventes fechas: si el reporte no incluye una fecha explícita con día/mes/año (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacíos los campos de fecha. Si solo hay horas, no pongas fecha.
 
@@ -262,9 +262,9 @@ Columnas y formato:
 15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
 16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
 17. Estado → Cerrado | En investigación.
-18. Vulnerabilidad → (opcional) SOLO un código con formato N.N tomado de la “Guia Vuln”.
+18. Vulnerabilidad → SOLO un código con formato N.N tomado de la “Guia Vuln”.
 19. Causa → vacío.
-20. ID Amenaza → (opcional) SOLO un código con formato N.N tomado de la “Guia Amenazas”.
+20. ID Amenaza → SOLO un código con formato N.N tomado de la “Guia Amenazas”.
 21. Amenaza → vacío.
 
 Guía de Vulnerabilidades:
@@ -336,12 +336,13 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
 MESES_ES = r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
 
 def hay_fecha_explicita(texto: str) -> bool:
+    """True solo si hay fecha con AÑO explícito."""
     t = texto.lower()
-    if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", t):
+    if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", t):  # 2025-08-10
         return True
-    if re.search(r"\b\d{1,2}[/-]\d{1,2}/\d{4}\b", t):
+    if re.search(r"\b\d{1,2}[/-]\d{1,2}/\d{4}\b", t):  # 10/08/2025 o 10-08-2025 (exige año de 4 dígitos)
         return True
-    if re.search(rf"\b\d{{1,2}}\s+de\s+(?:{MESES_ES})\s+de\s+\d{{4}}\b", t):
+    if re.search(rf"\b\d{{1,2}}\s+de\s+(?:{MESES_ES})\s+de\s+\d{{4}}\b", t):  # 10 de agosto de 2025
         return True
     return False
 
@@ -391,6 +392,7 @@ def calcula_tiempo_desde_texto(texto: str) -> str:
     return f"{horas} horas {minutos} minutos"
 
 def fechas_desde_horas_si_aplica(texto: str) -> tuple[str, str]:
+    """Si no hay fecha con año explícito, usa la fecha de hoy con las horas encontradas."""
     if hay_fecha_explicita(texto):
         return "", ""
     hh = extraer_horas_any(texto)
@@ -423,7 +425,7 @@ def reubicar_codigos_mal_colocados(fila: List[str]) -> List[str]:
     return movimientos
 
 # ---------------------------
-# Reglas determinísticas (Amenaza/Vulnerabilidad)
+# Reglas determinísticas de respaldo (Amenaza/Vulnerabilidad)
 # ---------------------------
 _PAT_AMENAZA = [
     (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
@@ -468,7 +470,7 @@ def infer_vulnerabilidad(texto: str) -> str:
     return ""
 
 # ---------------------------
-# Inferencias auxiliares
+# Inferencia de Ubicación / Modo / Acción / Solución / Clasificación / Área GTIC / Sistema / Área
 # ---------------------------
 DEPTS_BO = {
     "la paz": ["la paz", "lpz", "el alto"],
@@ -562,6 +564,7 @@ def infer_clasificacion(texto: str, clasif_modelo: str = "") -> str:
 
 def normaliza_clasificacion_final(valor: str) -> str:
     v = valor.strip().lower()
+    if not v: return ""
     for k, canon in CLASIF_CANON.items():
         if k in v:
             return canon
@@ -674,14 +677,24 @@ if st.button("Reportar", use_container_width=True):
         # Reubicar si Gemini metió códigos en Causa/Amenaza
         movimientos = reubicar_codigos_mal_colocados(fila)
 
-        # Deducción NO obligatoria de Vulnerabilidad / ID Amenaza
-        texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
-        fila[17] = valida_id(fila[17], ID_VULN_VALIDOS) or valida_id(infer_vulnerabilidad(texto_ctx), ID_VULN_VALIDOS)
-        fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS) or valida_id(infer_amenaza(texto_ctx), ID_AMENAZA_VALIDOS)
+        # Validaciones de códigos
+        fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)     # Vulnerabilidad
+        fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)  # ID Amenaza
 
-        # Causa (19) y Amenaza (21) SIEMPRE vacías
+        # Fallback determinístico si faltan Vulnerabilidad/Amenaza
+        texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
+        if not fila[19]:
+            fila[19] = valida_id(infer_amenaza(texto_ctx), ID_AMENAZA_VALIDOS)
+        if not fila[17]:
+            fila[17] = valida_id(infer_vulnerabilidad(texto_ctx), ID_VULN_VALIDOS)
+
+        # Enfoque estricto: Causa (19) y Amenaza (21) SIEMPRE vacías
         fila[18] = ""
         fila[20] = ""
+
+        if not fila[17] or not fila[19]:
+            st.error("Faltan códigos en Vulnerabilidad (18) o ID Amenaza (20). Ajusta el reporte o completa manualmente.")
+            st.stop()
 
         # Completar otros campos desde el texto si faltan
         if not fila[2].strip():
@@ -692,25 +705,29 @@ if st.button("Reportar", use_container_width=True):
             fila[10] = infer_accion_inmediata(user_question)
         if not fila[11].strip():
             fila[11] = infer_solucion(user_question)
+        # Clasificación (normaliza o infiere; lista cerrada)
         fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
+        # Área GTIC coordinando
         if not fila[12].strip():
             fila[12] = infer_area_coordinando(user_question)
+        # Sistema (VPN, Correo, etc.)
         if not fila[5].strip():
             fila[5] = infer_sistema(user_question)
+        # Área (Contabilidad, etc.)
         if not fila[6].strip():
             fila[6] = infer_area(user_question)
 
-        # Tiempo de solución
+        # Tiempo de solución: por fechas o, si no, por horas
         if not fila[15].strip():
             fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
         if not fila[15].strip():
             fila[15] = calcula_tiempo_desde_texto(user_question)
 
-        # Estado por defecto
+        # Estado por defecto si falta
         if not fila[16].strip():
             fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
 
-        # Generar CODIGO backend
+        # Generar CODIGO backend (col 1) según Fecha Apertura (col 2) o fecha actual
         codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
         fila[0] = codigo
 
@@ -731,14 +748,12 @@ if st.button("Reportar", use_container_width=True):
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
 
-        # Avisos (informativos)
+        # Info de correcciones automáticas (si las hubo)
         avisos_extra = []
         if movimientos:
             avisos_extra.append("Se reubicaron códigos: " + ", ".join(movimientos))
         if avisos or avisos_extra:
             st.info(" | ".join(avisos + avisos_extra))
-        if not fila[13].strip():
-            st.warning("Falta completar el campo **Encargado SI**. Puedes actualizarlo luego en la hoja.")
 
         # Guardado
         try:
@@ -755,3 +770,5 @@ if st.button("Reportar", use_container_width=True):
             file_name=f"{fila[0] or 'INC'}_fila.txt",
             mime="text/plain"
         )
+
+
