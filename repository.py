@@ -692,8 +692,8 @@ if st.button("Reportar", use_container_width=True):
         fila[18] = ""
         fila[20] = ""
 
-        if not fila[17] or not fila[19]:
-            st.error("Faltan códigos en Vulnerabilidad (18) o ID Amenaza (20). Ajusta el reporte o completa manualmente.")
+        if not fila[13]:
+            st.error("Falta definir quien es el encargado")
             st.stop()
 
         # Completar otros campos desde el texto si faltan
@@ -770,5 +770,6 @@ if st.button("Reportar", use_container_width=True):
             file_name=f"{fila[0] or 'INC'}_fila.txt",
             mime="text/plain"
         )
+
 
 
