@@ -239,7 +239,7 @@ Eres un asistente experto en seguridad informática. Convierte el reporte en UNA
 Reglas:
 - Usa el ORDEN EXACTO de las 21 columnas de abajo.
 - Si un campo llevaría |, reemplázalo por /.
-- Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
+- Si no puedes deducir un valor, déjalo vacío. **No bloquees el resultado por falta de datos.**
 - Zona horaria: America/La_Paz.
 - NO inventes fechas: si el reporte no incluye una fecha explícita con día/mes/año (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacíos los campos de fecha. Si solo hay horas, no pongas fecha.
 
@@ -340,7 +340,7 @@ def hay_fecha_explicita(texto: str) -> bool:
     t = texto.lower()
     if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", t):  # 2025-08-10
         return True
-    if re.search(r"\b\d{1,2}[/-]\d{1,2}/\d{4}\b", t):  # 10/08/2025 o 10-08-2025 (exige año de 4 dígitos)
+    if re.search(r"\b\d{1,2}[/-]\d{1,2}/\d{4}\b", t):  # 10/08/2025 o 10-08-2025
         return True
     if re.search(rf"\b\d{{1,2}}\s+de\s+(?:{MESES_ES})\s+de\s+\d{{4}}\b", t):  # 10 de agosto de 2025
         return True
@@ -641,6 +641,9 @@ user_question = st.text_area(
     help="Incluye: Fecha/hora de apertura, Sistema, Área, Acción inmediata, Solución, Área GTIC que coordinó y Fecha/hora de cierre."
 )
 
+GTIC_OPCIONES = ["", "Seguridad Informática", "Redes", "Infraestructura", "Soporte Técnico", "Sistemas"]
+
+# --- Paso 1: Generar fila (no guarda aún) ---
 if st.button("Reportar", use_container_width=True):
     if not user_question.strip():
         st.warning("Por favor, describe el incidente antes de continuar.")
@@ -677,7 +680,7 @@ if st.button("Reportar", use_container_width=True):
         # Reubicar si Gemini metió códigos en Causa/Amenaza
         movimientos = reubicar_codigos_mal_colocados(fila)
 
-        # Validaciones de códigos
+        # Validaciones de códigos (ya no bloquean)
         fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)     # Vulnerabilidad
         fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)  # ID Amenaza
 
@@ -691,10 +694,6 @@ if st.button("Reportar", use_container_width=True):
         # Enfoque estricto: Causa (19) y Amenaza (21) SIEMPRE vacías
         fila[18] = ""
         fila[20] = ""
-
-        if not fila[17] or not fila[19]:
-            st.error("Faltan códigos en Vulnerabilidad (18) o ID Amenaza (20). Ajusta el reporte o completa manualmente.")
-            st.stop()
 
         # Completar otros campos desde el texto si faltan
         if not fila[2].strip():
@@ -727,46 +726,75 @@ if st.button("Reportar", use_container_width=True):
         if not fila[16].strip():
             fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
 
-        # Generar CODIGO backend (col 1) según Fecha Apertura (col 2) o fecha actual
-        codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
-        fila[0] = codigo
+        # Guardar en sesión para edición/confirmación
+        st.session_state.fila_pendiente = fila
+        st.session_state.avisos = avisos
+        st.session_state.movimientos = movimientos
+        st.success("Revisa la vista previa y completa los campos faltantes (si aplica). Luego haz clic en **Guardar en Google Sheets**.")
 
-        # Confirmación final de 21 campos
-        if len(fila) != 21:
-            st.error(f"La salida quedó con {len(fila)} columnas tras saneo (esperado: 21).")
-            st.code(cleaned, language="text")
-            st.stop()
+# --- Paso 2: Previsualizar, completar faltantes y guardar ---
+if "fila_pendiente" in st.session_state:
+    fila = st.session_state.fila_pendiente
+    columnas = [
+        "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/ Incidente","Descripción Evento/ Incidente",
+        "Sistema","Area","Ubicación","Impacto","Clasificación","Acción Inmediata","Solución",
+        "Area de GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo Solución",
+        "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza"
+    ]
+    df_prev = pd.DataFrame([fila], columns=columnas)
+    st.subheader("Vista previa")
+    st.dataframe(df_prev, use_container_width=True)
 
-        # Vista previa
-        columnas = [
-            "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/ Incidente","Descripción Evento/ Incidente",
-            "Sistema","Area","Ubicación","Impacto","Clasificación","Acción Inmediata","Solución",
-            "Area de GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo Solución",
-            "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza"
-        ]
-        df_prev = pd.DataFrame([fila], columns=columnas)
-        st.subheader("Vista previa")
-        st.dataframe(df_prev, use_container_width=True)
+    notas = []
+    if st.session_state.get("avisos"): notas += st.session_state["avisos"]
+    if st.session_state.get("movimientos"): notas.append("Se reubicaron códigos: " + ", ".join(st.session_state["movimientos"]))
+    if not fila[17] or not fila[19]:
+        notas.append("La IA no pudo inferir totalmente Vulnerabilidad o ID Amenaza; se guardará vacío si no lo completas manualmente en la hoja.")
+    if notas:
+        st.info(" | ".join(notas))
 
-        # Info de correcciones automáticas (si las hubo)
-        avisos_extra = []
-        if movimientos:
-            avisos_extra.append("Se reubicaron códigos: " + ", ".join(movimientos))
-        if avisos or avisos_extra:
-            st.info(" | ".join(avisos + avisos_extra))
+    st.markdown("### Completar campos faltantes")
+    # Área de GTIC - Coordinando (requerido para guardar)
+    opciones = GTIC_OPCIONES.copy()
+    default_acoord = fila[12].strip()
+    if default_acoord and default_acoord not in opciones:
+        opciones.insert(1, default_acoord)
+    acoord = st.selectbox("Área de GTIC - Coordinando (requerido)", opciones,
+                          index=opciones.index(default_acoord) if default_acoord in opciones else 0,
+                          key="acoord_sel")
+    # Encargado SI (opcional)
+    encsi = st.text_input("Encargado SI (opcional)", value=fila[13].strip(), key="encsi_input")
 
-        # Guardado
-        try:
-            ws.append_row(fila, value_input_option="RAW")
-            st.success("Incidente registrado correctamente en Google Sheets.")
-        except Exception as e:
-            st.error(f"No se pudo escribir en la hoja: {e}")
+    col1, col2 = st.columns(2)
+    with col1:
+        if st.button("Guardar en Google Sheets", type="primary", use_container_width=True):
+            if not acoord.strip():
+                st.error("Completa **Área de GTIC - Coordinando** para guardar.")
+                st.stop()
+            fila[12] = acoord.strip()
+            fila[13] = encsi.strip()
 
-        # Descarga de auditoría
-        csv_line = "|".join(fila)
-        st.download_button(
-            "Descargar fila (pipe-separated)",
-            data=csv_line,
-            file_name=f"{fila[0] or 'INC'}_fila.txt",
-            mime="text/plain"
-        )
+            # Generar CODIGO backend (col 1) según Fecha Apertura (col 2) o fecha actual
+            codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
+            fila[0] = codigo
+
+            try:
+                ws.append_row(fila, value_input_option="RAW")
+                st.success("Incidente registrado correctamente en Google Sheets.")
+                # Descarga de auditoría
+                csv_line = "|".join(fila)
+                st.download_button(
+                    "Descargar fila (pipe-separated)",
+                    data=csv_line,
+                    file_name=f"{fila[0] or 'INC'}_fila.txt",
+                    mime="text/plain"
+                )
+                # limpiar sesión
+                del st.session_state["fila_pendiente"]
+                st.stop()
+            except Exception as e:
+                st.error(f"No se pudo escribir en la hoja: {e}")
+    with col2:
+        if st.button("Descartar", use_container_width=True):
+            del st.session_state["fila_pendiente"]
+            st.info("Borrador descartado.")
