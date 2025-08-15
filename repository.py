@@ -33,9 +33,10 @@ Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos
 3. **Área afectada** — el departamento o unidad donde se detectó el problema.  
 4. **Acción inmediata tomada** — lo que hizo el usuario para mitigar el problema.  
 5. **Solución aplicada** — acción final que resolvió el incidente.  
-6. **Área de GTIC que coordinó** — Infrestructura, Seguridad, Soporte Técnico, etc.  
+6. **Área de GTIC que coordinó** — Infraestructura, Seguridad, Soporte Técnico, etc.  
 7. **Fecha y hora de cierre** — cuando se resolvió el incidente.
 """)
+
 # ---------------------------
 # Guías (texto de referencia)
 # ---------------------------
@@ -216,6 +217,20 @@ ID_AMENAZA_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_amenazas))
 CODE_RE = re.compile(r'^\d+\.\d+$')
 
 # ---------------------------
+# Clasificaciones válidas (lista cerrada)
+# ---------------------------
+CLASIF_CANON = {
+    "acceso no autorizado": "Acceso no autorizado",
+    "modificación de recursos no autorizado": "Modificación de recursos no autorizado",
+    "uso inapropiado de recursos": "Uso inapropiado de recursos",
+    "no disponibilidad de recursos": "No disponibilidad de recursos",
+    "multicomponente": "Multicomponente",
+    "exploración de vulnerabilidades": "Exploración de Vulnerabilidades",
+    "otros": "Otros",
+}
+CLASIF_TEXTO = "\n".join([f"- {v}" for v in CLASIF_CANON.values()])
+
+# ---------------------------
 # Prompt (CODIGO lo genera backend y no se inventan fechas)
 # ---------------------------
 persona = f"""
@@ -238,7 +253,8 @@ Columnas y formato:
 7. Area
 8. Ubicación
 9. Impacto → Alto | Medio | Bajo.
-10. Clasificación → usar solo valores válidos.
+10. Clasificación → elige exactamente UNO de: 
+{CLASIF_TEXTO}
 11. Acción Inmediata
 12. Solución
 13. Area de GTIC - Coordinando → (Redes, Seguridad Informática, Soporte Técnico, Sistemas, …).
@@ -315,68 +331,101 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
     return ""
 
 # ---------------------------
-# No inventar fechas: detección de fecha explícita y cálculo por horas
+# Fechas/horas del texto (am/pm y 24h)
 # ---------------------------
 MESES_ES = r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
 
 def hay_fecha_explicita(texto: str) -> bool:
+    """True solo si hay fecha con AÑO explícito."""
     t = texto.lower()
     if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", t):  # 2025-08-10
         return True
-    if re.search(r"\b\d{1,2}[/-]\d{1,2}[/-](?:20)?\d{2}\b", t):  # 10/08/2025 o 10-08-25
+    if re.search(r"\b\d{1,2}[/-]\d{1,2}/\d{4}\b", t):  # 10/08/2025 o 10-08-2025 (exige año de 4 dígitos)
         return True
-    if re.search(rf"\b\d{{1,2}}\s+de\s+(?:{MESES_ES})(?:\s+de\s+\d{{4}})?\b", t):  # 10 de agosto (de 2025)
+    if re.search(rf"\b\d{{1,2}}\s+de\s+(?:{MESES_ES})\s+de\s+\d{{4}}\b", t):  # 10 de agosto de 2025
         return True
     return False
 
-def extraer_horas(texto: str):
-    hhmm = re.findall(r"\b([01]?\d|2[0-3]):([0-5]\d)\b", texto)
-    return [f"{int(h):02d}:{int(m):02d}" for h, m in hhmm]
+AMPM_RE = re.compile(
+    r"\b(?P<hour>1[0-2]|0?[1-9])(?::(?P<minute>[0-5]\d))?\s*(?P<ampm>a\.?m\.?|am|p\.?m\.?|pm)\b",
+    re.IGNORECASE
+)
+H24_RE = re.compile(r"\b(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)\b")
+
+def _to_24h(hour: int, minute: int, ampm: str) -> tuple[int, int]:
+    ampm = ampm.lower().replace(".", "")
+    if ampm.startswith("p") and hour != 12:
+        hour += 12
+    if ampm.startswith("a") and hour == 12:
+        hour = 0
+    return hour, minute
+
+def extraer_horas_any(texto: str) -> list[str]:
+    t = texto.lower()
+    horas: list[str] = []
+    for m in AMPM_RE.finditer(t):
+        h = int(m.group("hour")); mi = int(m.group("minute") or 0)
+        H, M = _to_24h(h, mi, m.group("ampm"))
+        horas.append(f"{H:02d}:{M:02d}")
+    for m in H24_RE.finditer(t):
+        H = int(m.group("hour")); M = int(m.group("minute"))
+        horas.append(f"{H:02d}:{M:02d}")
+    seen, out = set(), []
+    for x in horas:
+        if x not in seen:
+            seen.add(x); out.append(x)
+    return out
 
 def calcula_tiempo_desde_texto(texto: str) -> str:
-    horas = extraer_horas(texto)
-    if len(horas) < 2:
+    hh = extraer_horas_any(texto)
+    if len(hh) < 2:
         return ""
-    h_ini, h_fin = horas[0], horas[-1]
+    h_ini, h_fin = hh[0], hh[-1]
     today = datetime.now(TZ).date()
-    dt_a = datetime.strptime(f"{today} {h_ini}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
-    dt_c = datetime.strptime(f"{today} {h_fin}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
-    if dt_c < dt_a:  # pasó medianoche
-        dt_c = dt_c + timedelta(days=1)
-    delta = dt_c - dt_a
+    a = datetime.strptime(f"{today} {h_ini}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+    c = datetime.strptime(f"{today} {h_fin}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
+    if c < a:
+        c = c + timedelta(days=1)
+    delta = c - a
     horas = delta.seconds // 3600 + delta.days * 24
     minutos = (delta.seconds % 3600) // 60
     return f"{horas} horas {minutos} minutos"
 
+def fechas_desde_horas_si_aplica(texto: str) -> tuple[str, str]:
+    """Si no hay fecha con año explícito, usa la fecha de hoy con las horas encontradas."""
+    if hay_fecha_explicita(texto):
+        return "", ""
+    hh = extraer_horas_any(texto)
+    if not hh:
+        return "", ""
+    today = datetime.now(TZ).date()
+    apertura = f"{today} {hh[0]}"
+    cierre = f"{today} {hh[-1]}" if len(hh) > 1 else ""
+    return apertura, cierre
+
 # ---------------------------
 # Reubicador de códigos mal colocados (Causa/Amenaza)
 # ---------------------------
-def reubicar_codigos_mal_colocados(fila: List[str]) -> list[str]:
+def reubicar_codigos_mal_colocados(fila: List[str]) -> List[str]:
     movimientos = []
-    # Si Causa (19, index 18) trae código, reubicar
     if fila[18].strip() and CODE_RE.fullmatch(fila[18].strip()):
         code = fila[18].strip()
         if code in ID_AMENAZA_VALIDOS and not fila[19].strip():
-            fila[19] = code
-            movimientos.append("ID Amenaza <- Causa")
+            fila[19] = code; movimientos.append("ID Amenaza <- Causa")
         elif code in ID_VULN_VALIDOS and not fila[17].strip():
-            fila[17] = code
-            movimientos.append("Vulnerabilidad <- Causa")
+            fila[17] = code; movimientos.append("Vulnerabilidad <- Causa")
         fila[18] = ""
-    # Si Amenaza (21, index 20) trae código, reubicar
     if fila[20].strip() and CODE_RE.fullmatch(fila[20].strip()):
         code = fila[20].strip()
         if code in ID_AMENAZA_VALIDOS and not fila[19].strip():
-            fila[19] = code
-            movimientos.append("ID Amenaza <- Amenaza")
+            fila[19] = code; movimientos.append("ID Amenaza <- Amenaza")
         elif code in ID_VULN_VALIDOS and not fila[17].strip():
-            fila[17] = code
-            movimientos.append("Vulnerabilidad <- Amenaza")
+            fila[17] = code; movimientos.append("Vulnerabilidad <- Amenaza")
         fila[20] = ""
     return movimientos
 
 # ---------------------------
-# Reglas determinísticas de respaldo
+# Reglas determinísticas de respaldo (Amenaza/Vulnerabilidad)
 # ---------------------------
 _PAT_AMENAZA = [
     (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
@@ -407,8 +456,7 @@ _PAT_VULN = [
 def infer_amenaza(texto: str) -> str:
     t = texto.lower()
     for pat, code in _PAT_AMENAZA:
-        if re.search(pat, t):
-            return code
+        if re.search(pat, t): return code
     if re.search(r"(ca[ií]da|no disponible|indisponibilidad|reinici(ar|o))", t):
         return "4.1"
     return ""
@@ -416,10 +464,138 @@ def infer_amenaza(texto: str) -> str:
 def infer_vulnerabilidad(texto: str) -> str:
     t = texto.lower()
     for pat, code in _PAT_VULN:
-        if re.search(pat, t):
-            return code
+        if re.search(pat, t): return code
     if re.search(r"(ca[ií]da|no disponible|indisponibilidad)", t):
         return "4.39"
+    return ""
+
+# ---------------------------
+# Inferencia de Ubicación / Modo / Acción / Solución / Clasificación / Área GTIC / Sistema / Área
+# ---------------------------
+DEPTS_BO = {
+    "la paz": ["la paz", "lpz", "el alto"],
+    "santa cruz": ["santa cruz", "scz", "santa cruz de la sierra"],
+    "cochabamba": ["cochabamba", "cbba", "cbb"],
+    "chuquisaca": ["chuquisaca", "sucre"],
+    "oruro": ["oruro"],
+    "potosí": ["potosi", "potosí"],
+    "beni": ["beni", "trinidad"],
+    "pando": ["pando", "cobija"],
+    "tarija": ["tarija", "yacuiba", "villa montes"],
+}
+def detectar_ubicacion_ext(texto: str) -> str:
+    t = texto.lower()
+    if "a nivel nacional" in t or "nivel nacional" in t:
+        return "Bolivia (nivel nacional)"
+    m = re.search(r"(sucursal|oficina|sede)\s+([a-záéíóúñ ]+)", t)
+    if m:
+        return f"{m.group(1).title()} {m.group(2).strip().title()}"
+    for dept, keys in DEPTS_BO.items():
+        for k in keys:
+            if re.search(rf"\b{k}\b", t):
+                return f"{dept.title()}, Bolivia"
+    return ""
+
+def detectar_modo_reporte(texto: str) -> str:
+    t = texto.lower()
+    if "jira" in t: return "Jira"
+    if "monitoreo" in t or "alerta" in t: return "Monitoreo"
+    if "teléfono" in t or "telefono" in t or "llam" in t: return "Teléfono"
+    if "correo" in t or "e-mail" in t or "email" in t: return "Correo"
+    return ""
+
+ACCION_RULES = [
+    (r"reinici(ar|ó|o|amos|aron).*(equipo|pc|servicio|servidor)", "Reinicio de servicios/equipo"),
+    (r"verific(ar|ó|aron).*conectividad|ping|traz", "Verificación de conectividad"),
+    (r"bloque(o|ar|ó).*cuenta|forz[oó].*contraseñ|cambio de contraseñ", "Bloqueo/cambio de contraseñas"),
+    (r"aisl(ar|ado|amiento).*equipo|segmentaci[oó]n", "Aislamiento del equipo"),
+]
+SOLUCION_RULES = [
+    (r"reinici(ar|ó).*(servicio|servidor)", "Reinicio de servicios"),
+    (r"ampli(ar|ación).*(licencia|licencias)", "Ampliación de licencias"),
+    (r"aplicar(on)? (parches|actualizaciones)|actualiz(ar|ó)", "Aplicación de actualizaciones"),
+    (r"restaur(ar|ó).*(backup|respaldo|copias)", "Restauración desde respaldo"),
+    (r"mitigaci[oó]n.*(waf|ddos)|\bwaf\b", "Mitigación en WAF"),
+]
+def _collect(vals: set[str], rules: list[tuple[str,str]], texto: str):
+    t = texto.lower()
+    for pat, label in rules:
+        if re.search(pat, t):
+            vals.add(label)
+def infer_accion_inmediata(texto: str) -> str:
+    s: set[str] = set(); _collect(s, ACCION_RULES, texto)
+    return "; ".join(sorted(s)) if s else ""
+def infer_solucion(texto: str) -> str:
+    s: set[str] = set(); _collect(s, SOLUCION_RULES, texto)
+    return "; ".join(sorted(s)) if s else ""
+
+CLASIF_PATTERNS = {
+    "Acceso no autorizado": [
+        r"acceso no autoriz", r"intrus", r"suplantaci[oó]n",
+        r"credenciales? (compromet|filtrad|robadas)", r"elevaci[oó]n de privilegios",
+        r"cuenta comprometida|login irregular",
+    ],
+    "Modificación de recursos no autorizado": [
+        r"defacement|desfiguraci[oó]n", r"alteraci[oó]n|modificaci[oó]n.*no autoriz",
+        r"borrad(o|a) (no autoriz|accidental)", r"integridad.*(afectad|compromet)",
+    ],
+    "Uso inapropiado de recursos": [
+        r"uso inapropiad|uso indebido|violaci[oó]n.*pol[íi]tica.*uso", r"usb no autoriz",
+    ],
+    "No disponibilidad de recursos": [
+        r"ca[ií]da|indisponibil|no disponible|servicio.*no responde|interrupci[oó]n|apag[oó]n|fuera de servicio|vpn.*ca[ií]da|ddos|denegaci[oó]n",
+    ],
+    "Exploración de Vulnerabilidades": [
+        r"escane[oó]|scan|nmap|nessus|openvas|enumeraci[oó]n|port scan|sondeo de puertos",
+    ],
+}
+def infer_clasificacion(texto: str, clasif_modelo: str = "") -> str:
+    cm = clasif_modelo.strip().lower()
+    if cm in CLASIF_CANON:
+        return CLASIF_CANON[cm]
+    hits = []
+    t = texto.lower()
+    for nombre, pats in CLASIF_PATTERNS.items():
+        if any(re.search(p, t) for p in pats):
+            hits.append(nombre)
+    if len(hits) >= 2: return "Multicomponente"
+    if len(hits) == 1: return hits[0]
+    return ""
+
+def normaliza_clasificacion_final(valor: str) -> str:
+    v = valor.strip().lower()
+    if not v: return ""
+    for k, canon in CLASIF_CANON.items():
+        if k in v:
+            return canon
+    return ""
+
+def infer_area_coordinando(texto: str) -> str:
+    t = texto.lower()
+    if "seguridad" in t: return "Seguridad Informática"
+    if "redes" in t or "vpn" in t or "cisco" in t: return "Redes"
+    if "infraestructura" in t: return "Infraestructura"
+    if "soporte" in t or "mesa de ayuda" in t: return "Soporte Técnico"
+    if "sistemas" in t or "erp" in t or "base de datos" in t: return "Sistemas"
+    return ""
+
+def infer_sistema(texto: str) -> str:
+    t = texto.lower()
+    if re.search(r"\bvpn\b", t): return "VPN"
+    if re.search(r"correo|email|outlook|exchange", t): return "Correo"
+    if re.search(r"active directory|\bad\b", t): return "Active Directory"
+    if re.search(r"\bfirewall\b", t): return "Firewall"
+    if re.search(r"\berp\b", t): return "ERP"
+    if re.search(r"whatsapp", t): return "WhatsApp"
+    if re.search(r"portal web|sitio web|web p[úu]blica|p[aá]gina web", t): return "Portal Web"
+    if re.search(r"base de datos|postgres|oracle|mysql|sql server|mssql", t): return "Base de Datos"
+    return ""
+
+def infer_area(texto: str) -> str:
+    t = texto.lower()
+    m = re.search(r"(área|area|departamento|unidad)\s+de\s+([a-záéíóúñ ]+)", t)
+    if m:
+        return m.group(2).strip().title()
     return ""
 
 # ---------------------------
@@ -441,13 +617,11 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
     patron = re.compile(rf"^INC-{dia}-{mes}-(\d{{3}})$")
     max_seq = 0
     for c in codigos:
-        if not c:
-            continue
+        if not c: continue
         m = patron.match(c.strip())
         if m:
             n = int(m.group(1))
-            if n > max_seq:
-                max_seq = n
+            if n > max_seq: max_seq = n
 
     seq = max_seq + 1
     candidato = f"INC-{dia}-{mes}-{seq:03d}"
@@ -464,10 +638,8 @@ user_question = st.text_area(
     "Describe el incidente:",
     height=200,
     placeholder="Ej: A las 8:00am el área de Contabilidad reporta por Correo que no puede acceder al sistema de Correo corporativo. Como acción inmediata, el usuario reinició el equipo y Mesa de Ayuda validó conectividad sin resultados. Seguridad Informática coordinó la atención y reinició el servicio de Correo en el servidor, verificando autenticación y entrega de mensajes. A las 10:15am el servicio quedó restablecido y se cerró el incidente.",
-    help="Incluye: Fecha/hora de apertura, Sistema, Área, Acción inmediata, Solución, Área GTIC que coordinó y Fecha/hora de cierre (YYYY-MM-DD HH:MM)."
+    help="Incluye: Fecha/hora de apertura, Sistema, Área, Acción inmediata, Solución, Área GTIC que coordinó y Fecha/hora de cierre."
 )
-
-
 
 if st.button("Reportar", use_container_width=True):
     if not user_question.strip():
@@ -492,10 +664,15 @@ if st.button("Reportar", use_container_width=True):
         cleaned = sanitize_text(response_text)
         fila, avisos = normalize_21_fields(cleaned)
 
-        # Si el texto NO trae fecha explícita, forzar vacíos en 2 y 15
+        # Si el texto NO trae fecha explícita (con año), vacía campos 2 y 15
         if not hay_fecha_explicita(user_question):
             fila[1] = ""   # Fecha y Hora de Apertura
             fila[14] = ""  # Fecha y Hora de Cierre
+
+        # Completar fechas a partir de horas si solo hay horas (am/pm o 24h)
+        ap_auto, ci_auto = fechas_desde_horas_si_aplica(user_question)
+        if not fila[1].strip() and ap_auto: fila[1] = ap_auto
+        if not fila[14].strip() and ci_auto: fila[14] = ci_auto
 
         # Reubicar si Gemini metió códigos en Causa/Amenaza
         movimientos = reubicar_codigos_mal_colocados(fila)
@@ -504,14 +681,12 @@ if st.button("Reportar", use_container_width=True):
         fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)     # Vulnerabilidad
         fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)  # ID Amenaza
 
-        # Fallback determinístico si faltan
+        # Fallback determinístico si faltan Vulnerabilidad/Amenaza
         texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
         if not fila[19]:
-            fila[19] = infer_amenaza(texto_ctx)
-            fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)
+            fila[19] = valida_id(infer_amenaza(texto_ctx), ID_AMENAZA_VALIDOS)
         if not fila[17]:
-            fila[17] = infer_vulnerabilidad(texto_ctx)
-            fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)
+            fila[17] = valida_id(infer_vulnerabilidad(texto_ctx), ID_VULN_VALIDOS)
 
         # Enfoque estricto: Causa (19) y Amenaza (21) SIEMPRE vacías
         fila[18] = ""
@@ -521,7 +696,28 @@ if st.button("Reportar", use_container_width=True):
             st.error("Faltan códigos en Vulnerabilidad (18) o ID Amenaza (20). Ajusta el reporte o completa manualmente.")
             st.stop()
 
-        # Tiempo de solución: primero usando fechas, si no existen, calcular por horas del texto
+        # Completar otros campos desde el texto si faltan
+        if not fila[2].strip():
+            fila[2] = detectar_modo_reporte(user_question)
+        if not fila[7].strip():
+            fila[7] = detectar_ubicacion_ext(user_question)
+        if not fila[10].strip():
+            fila[10] = infer_accion_inmediata(user_question)
+        if not fila[11].strip():
+            fila[11] = infer_solucion(user_question)
+        # Clasificación (normaliza o infiere; lista cerrada)
+        fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
+        # Área GTIC coordinando
+        if not fila[12].strip():
+            fila[12] = infer_area_coordinando(user_question)
+        # Sistema (VPN, Correo, etc.)
+        if not fila[5].strip():
+            fila[5] = infer_sistema(user_question)
+        # Área (Contabilidad, etc.)
+        if not fila[6].strip():
+            fila[6] = infer_area(user_question)
+
+        # Tiempo de solución: por fechas o, si no, por horas
         if not fila[15].strip():
             fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
         if not fila[15].strip():
@@ -574,9 +770,3 @@ if st.button("Reportar", use_container_width=True):
             file_name=f"{fila[0] or 'INC'}_fila.txt",
             mime="text/plain"
         )
-
-
-
-
-
-
