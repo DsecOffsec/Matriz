@@ -28,13 +28,15 @@ st.markdown("""
 
 Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos **obligatorios**:
 
-1. **Fecha y hora de apertura** — la hora de inicio del incidente/alerta con hora y AM/PM.  
-2. **Sistema afectado** — por ejemplo: Correo, VPN, Active Directory, Firewall, etc.  
-3. **Área afectada** — el departamento o unidad donde se detectó el problema.  
-4. **Acción inmediata tomada** — lo que hizo el usuario para mitigar el problema.  
-5. **Solución aplicada** — acción final que resolvió el incidente.  
-6. **Área de GTIC que coordinó** — Infraestructura, Seguridad, Soporte Técnico, etc.  
-7. **Fecha y hora de cierre** — cuando se resolvió el incidente.
+1. **Fecha y hora de apertura** — La hora de inicio del incidente/alerta con hora y AM/PM.
+2. **Modo de reporte** - Si lo reportaron por correo, JIRA, monitoreo, llamada, etc.
+3. **Sistema afectado** — Por ejemplo: Correo, VPN, Antivirus, Firewall, etc.  
+4. **Área afectada** — El departamento o unidad donde se detectó el problema.  
+5. **Acción inmediata tomada** — Lo que hizo el usuario para mitigar el problema.  
+6. **Solución aplicada** — Acción final que resolvió el incidente.  
+7. **Área de GTIC que coordinó** — Infraestructura, Seguridad, Soporte Técnico, etc.  
+8. ***Encargado** - El que encargado de todo el incidente/alerta.
+9. **Fecha y hora de cierre** — Cuando se resolvió el incidente.
 """)
 
 # ---------------------------
@@ -761,15 +763,8 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente en Google Sheets.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
-
-        # Descarga de auditoría
-        csv_line = "|".join(fila)
-        st.download_button(
-            "Descargar fila (pipe-separated)",
-            data=csv_line,
-            file_name=f"{fila[0] or 'INC'}_fila.txt",
-            mime="text/plain"
         )
+
 
 
 
