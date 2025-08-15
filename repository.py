@@ -231,7 +231,7 @@ CLASIF_CANON = {
 CLASIF_TEXTO = "\n".join([f"- {v}" for v in CLASIF_CANON.values()])
 
 # ---------------------------
-# Prompt (no obliga 18/20)
+# Prompt (CODIGO lo genera backend y no se inventan fechas)
 # ---------------------------
 persona = f"""
 Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
@@ -239,7 +239,7 @@ Eres un asistente experto en seguridad informática. Convierte el reporte en UNA
 Reglas:
 - Usa el ORDEN EXACTO de las 21 columnas de abajo.
 - Si un campo llevaría |, reemplázalo por /.
-- Si no puedes deducir un valor, déjalo vacío (no inventes).
+- Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
 - Zona horaria: America/La_Paz.
 - NO inventes fechas: si el reporte no incluye una fecha explícita con día/mes/año (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacíos los campos de fecha. Si solo hay horas, no pongas fecha.
 
@@ -262,9 +262,9 @@ Columnas y formato:
 15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
 16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
 17. Estado → Cerrado | En investigación.
-18. Vulnerabilidad → (opcional) SOLO un código con formato N.N tomado de la “Guia Vuln”.
+18. Vulnerabilidad → SOLO un código con formato N.N tomado de la “Guia Vuln”.
 19. Causa → vacío.
-20. ID Amenaza → (opcional) SOLO un código con formato N.N tomado de la “Guia Amenazas”.
+20. ID Amenaza → SOLO un código con formato N.N tomado de la “Guia Amenazas”.
 21. Amenaza → vacío.
 
 Guía de Vulnerabilidades:
@@ -470,7 +470,7 @@ def infer_vulnerabilidad(texto: str) -> str:
     return ""
 
 # ---------------------------
-# Inferencias auxiliares
+# Inferencia de Ubicación / Modo / Acción / Solución / Clasificación / Área GTIC / Sistema / Área
 # ---------------------------
 DEPTS_BO = {
     "la paz": ["la paz", "lpz", "el alto"],
@@ -677,7 +677,7 @@ if st.button("Reportar", use_container_width=True):
         # Reubicar si Gemini metió códigos en Causa/Amenaza
         movimientos = reubicar_codigos_mal_colocados(fila)
 
-        # Validaciones de códigos (no bloquea)
+        # Validaciones de códigos
         fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)     # Vulnerabilidad
         fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)  # ID Amenaza
 
@@ -691,6 +691,10 @@ if st.button("Reportar", use_container_width=True):
         # Enfoque estricto: Causa (19) y Amenaza (21) SIEMPRE vacías
         fila[18] = ""
         fila[20] = ""
+
+        if not fila[17] or not fila[19]:
+            st.error("Faltan códigos en Vulnerabilidad (18) o ID Amenaza (20). Ajusta el reporte o completa manualmente.")
+            st.stop()
 
         # Completar otros campos desde el texto si faltan
         if not fila[2].strip():
@@ -744,21 +748,12 @@ if st.button("Reportar", use_container_width=True):
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
 
-        # Avisos
+        # Info de correcciones automáticas (si las hubo)
         avisos_extra = []
         if movimientos:
             avisos_extra.append("Se reubicaron códigos: " + ", ".join(movimientos))
-        faltantes_clave = []
-        if not fila[11].strip(): faltantes_clave.append("Solución")
-        if not fila[12].strip(): faltantes_clave.append("Área de GTIC - Coordinando")
-        if not fila[13].strip(): faltantes_clave.append("Encargado SI")
-        if not fila[17]: avisos_extra.append("La IA no dedujo Vulnerabilidad (18); quedó vacío.")
-        if not fila[19]: avisos_extra.append("La IA no dedujo ID Amenaza (20); quedó vacío.")
-        if avisos: avisos_extra = avisos + avisos_extra
-        if avisos_extra:
-            st.info(" | ".join(avisos_extra))
-        if faltantes_clave:
-            st.warning("Faltan campos importantes: " + ", ".join(faltantes_clave) + ". Puedes completarlos en la hoja si aplica.")
+        if avisos or avisos_extra:
+            st.info(" | ".join(avisos + avisos_extra))
 
         # Guardado
         try:
