@@ -336,7 +336,6 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
 MESES_ES = r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
 
 def hay_fecha_explicita(texto: str) -> bool:
-    """True solo si hay fecha con AÑO explícito."""
     t = texto.lower()
     if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", t):
         return True
@@ -392,7 +391,6 @@ def calcula_tiempo_desde_texto(texto: str) -> str:
     return f"{horas} horas {minutos} minutos"
 
 def fechas_desde_horas_si_aplica(texto: str) -> tuple[str, str]:
-    """Si no hay fecha con año explícito, usa la fecha de hoy con las horas encontradas."""
     if hay_fecha_explicita(texto):
         return "", ""
     hh = extraer_horas_any(texto)
@@ -425,7 +423,7 @@ def reubicar_codigos_mal_colocados(fila: List[str]) -> List[str]:
     return movimientos
 
 # ---------------------------
-# Reglas determinísticas de respaldo (Amenaza/Vulnerabilidad)
+# Reglas determinísticas (Amenaza/Vulnerabilidad)
 # ---------------------------
 _PAT_AMENAZA = [
     (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
@@ -564,7 +562,6 @@ def infer_clasificacion(texto: str, clasif_modelo: str = "") -> str:
 
 def normaliza_clasificacion_final(valor: str) -> str:
     v = valor.strip().lower()
-    if not v: return ""
     for k, canon in CLASIF_CANON.items():
         if k in v:
             return canon
@@ -677,9 +674,10 @@ if st.button("Reportar", use_container_width=True):
         # Reubicar si Gemini metió códigos en Causa/Amenaza
         movimientos = reubicar_codigos_mal_colocados(fila)
 
-        # Validaciones/deducción de códigos (NO bloquea)
-        fila[17] = valida_id(fila[17], ID_VULN_VALIDOS) or valida_id(infer_vulnerabilidad(" ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])), ID_VULN_VALIDOS)
-        fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS) or valida_id(infer_amenaza(" ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])), ID_AMENAZA_VALIDOS)
+        # Deducción NO obligatoria de Vulnerabilidad / ID Amenaza
+        texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
+        fila[17] = valida_id(fila[17], ID_VULN_VALIDOS) or valida_id(infer_vulnerabilidad(texto_ctx), ID_VULN_VALIDOS)
+        fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS) or valida_id(infer_amenaza(texto_ctx), ID_AMENAZA_VALIDOS)
 
         # Causa (19) y Amenaza (21) SIEMPRE vacías
         fila[18] = ""
@@ -733,11 +731,12 @@ if st.button("Reportar", use_container_width=True):
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
 
-        # Avisos informativos (sin pedir datos faltantes, salvo Encargado SI)
-        if movimientos or avisos:
-            texto_info = " | ".join(avisos + (["Se reubicaron códigos: " + ", ".join(movimientos)] if movimientos else []))
-            if texto_info:
-                st.info(texto_info)
+        # Avisos (informativos)
+        avisos_extra = []
+        if movimientos:
+            avisos_extra.append("Se reubicaron códigos: " + ", ".join(movimientos))
+        if avisos or avisos_extra:
+            st.info(" | ".join(avisos + avisos_extra))
         if not fila[13].strip():
             st.warning("Falta completar el campo **Encargado SI**. Puedes actualizarlo luego en la hoja.")
 
