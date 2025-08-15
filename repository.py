@@ -760,9 +760,10 @@ if st.button("Reportar", use_container_width=True):
         # Guardado
         try:
             ws.append_row(fila, value_input_option="RAW")
-            st.success("Incidente registrado correctamente en Google Sheets.")
+            st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
