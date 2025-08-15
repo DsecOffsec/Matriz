@@ -763,7 +763,6 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente en Google Sheets.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
-        ))
 
 
 
