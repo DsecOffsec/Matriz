@@ -263,16 +263,10 @@ Columnas y formato:
 15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
 16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
 17. Estado → Cerrado | En investigación.
-18. Vulnerabilidad → SOLO un código con formato N.N tomado de la “Guia Vuln”.
+18. Vulnerabilidad → Vacio
 19. Causa → vacío.
-20. ID Amenaza → SOLO un código con formato N.N tomado de la “Guia Amenazas”.
+20. ID Amenaza → Vacio
 21. Amenaza → vacío.
-
-Guía de Vulnerabilidades:
-{guia_vuln}
-
-Guía de Amenazas:
-{guia_amenazas}
 
 [REPORTE DE ENTRADA]:
 """
@@ -679,13 +673,6 @@ if st.button("Reportar", use_container_width=True):
         if not fila[1].strip() and ap_auto: fila[1] = ap_auto
         if not fila[14].strip() and ci_auto: fila[14] = ci_auto
 
-        # Reubicar si Gemini metió códigos en Causa/Amenaza
-        movimientos = reubicar_codigos_mal_colocados(fila)
-
-        # Validaciones de códigos
-        fila[17] = valida_id(fila[17], ID_VULN_VALIDOS)     # Vulnerabilidad
-        fila[19] = valida_id(fila[19], ID_AMENAZA_VALIDOS)  # ID Amenaza
-
         # Fallback determinístico si faltan Vulnerabilidad/Amenaza
         texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
         if not fila[19]:
@@ -784,4 +771,5 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
