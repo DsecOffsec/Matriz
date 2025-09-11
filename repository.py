@@ -522,9 +522,6 @@ if st.button("Reportar", use_container_width=True):
         if not fila[13]:
             st.error("Falta definir quien es el encargado")
             st.stop()
-        if not fila[14]:
-            st.error("Falta definir la hora del cierre del incidente")
-            st.stop()
 
         # Completar otros campos desde el texto si faltan
         if not fila[2].strip():
@@ -597,6 +594,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
