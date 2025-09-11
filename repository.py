@@ -29,7 +29,7 @@ st.markdown("""
 Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos **obligatorios**:
 
 1. **Fecha y hora de apertura** — La hora de inicio del incidente/alerta con hora y AM/PM.
-2. **Modo de reporte** - Si lo reportaron por correo, JIRA, monitoreo, llamada, etc.
+2. **Modo de reporte** - Si lo reportaron por correo, JIRA, monitoreo, llamada, otros, etc.
 3. **Sistema afectado** — Por ejemplo: Correo, VPN, Antivirus, Firewall, etc.  
 4. **Área afectada** — El departamento o unidad donde se detectó el problema.  
 5. **Acción inmediata tomada** — Lo que hizo el usuario para mitigar el problema.  
@@ -259,7 +259,7 @@ Columnas y formato:
 {CLASIF_TEXTO}
 11. Acción Inmediata
 12. Solución
-13. Area de GTIC - Coordinando → (Redes, Seguridad Informática, Soporte Técnico, Sistemas, …).
+13. Area de GTIC - Coordinando → (DSEC - Seguridad, DITC - Infrestructura, DSTC = Soporte Técnico, DISC - Sistemas, …).
 14. Encargado SI → solo si se menciona; no inventes nombres.
 15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
 16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
@@ -711,7 +711,7 @@ if st.button("Reportar", use_container_width=True):
         if not fila[2].strip():
             fila[2] = detectar_modo_reporte(user_question)
         if not fila[7].strip():
-            fila[7] = detectar_ubicacion_ext(user_question)
+            fila[7] = detectar_ubicacion_ext(user_question) or "La paz"
         if not fila[10].strip():
             fila[10] = infer_accion_inmediata(user_question)
         if not fila[11].strip():
@@ -772,6 +772,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
