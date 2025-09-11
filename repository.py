@@ -767,7 +767,7 @@ if st.button("Reportar", use_container_width=True):
             "Fecha y Hora de Registro"   # nueva col 22 (servidor)
         ]
         
-         df_prev = pd.DataFrame([fila_con_ts], columns=columnas)
+        df_prev = pd.DataFrame([fila_con_ts], columns=columnas)
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
 
@@ -784,3 +784,4 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
