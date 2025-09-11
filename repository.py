@@ -700,6 +700,9 @@ if st.button("Reportar", use_container_width=True):
         if not fila[5]:
             st.error("Falta definir que sistema fue afectado")
             st.stop()
+        if not fila[6]:
+            st.error("Falta definir que area reporto el problema")
+            st.stop()
         if not fila[12]:
             st.error("Falta definir Con la Area de GTIC que se coordino")
             st.stop()
@@ -752,15 +755,19 @@ if st.button("Reportar", use_container_width=True):
             st.error(f"La salida quedó con {len(fila)} columnas tras saneo (esperado: 21).")
             st.code(cleaned, language="text")
             st.stop()
-
-        # Vista previa
+        registro_ts = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
+        fila_con_ts = fila + [registro_ts]
+        
+        # Encabezados para la vista previa (22 columnas)
         columnas = [
             "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/ Incidente","Descripción Evento/ Incidente",
             "Sistema","Area","Ubicación","Impacto","Clasificación","Acción Inmediata","Solución",
             "Area de GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo Solución",
-            "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza"
+            "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza",
+            "Fecha y Hora de Registro"   # nueva col 22 (servidor)
         ]
-        df_prev = pd.DataFrame([fila], columns=columnas)
+        
+         df_prev = pd.DataFrame([fila_con_ts], columns=columnas)
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
 
@@ -773,19 +780,7 @@ if st.button("Reportar", use_container_width=True):
 
         # Guardado
         try:
-            ws.append_row(fila, value_input_option="RAW")
+            ws.append_row(fila_con_ts, value_input_option="RAW")
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
