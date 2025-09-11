@@ -36,7 +36,6 @@ Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos
 6. **Solución aplicada** — Acción final que resolvió el incidente.  
 7. **Área de GTIC que coordinó** — Infraestructura, Seguridad, Soporte Técnico, etc.  
 8. **Encargado** - El que encargado de todo el incidente/alerta.
-9. **Fecha y hora de cierre** — Cuando se resolvió el incidente.
 """)
 
 # ---------------------------
@@ -594,6 +593,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
