@@ -575,10 +575,10 @@ if st.button("Reportar", use_container_width=True):
 
         # Info de correcciones automáticas (si las hubo)
         avisos_extra = []
-        if movimientos:
-            avisos_extra.append("Se reubicaron códigos: " + ", ".join(movimientos))
-        if avisos or avisos_extra:
-            st.info(" | ".join(avisos + avisos_extra))
+        #if movimientos:
+        #    avisos_extra.append("Se reubicaron códigos: " + ", ".join(movimientos))
+        #if avisos or avisos_extra:
+        #    st.info(" | ".join(avisos + avisos_extra))
 
         # Guardado
         try:
@@ -586,6 +586,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
