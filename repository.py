@@ -515,7 +515,7 @@ ACCION_RULES = [
     (r"bloque(o|ar|ó).*cuenta|forz[oó].*contraseñ|cambio de contraseñ", "Bloqueo/cambio de contraseñas"),
     (r"aisl(ar|ado|amiento).*equipo|segmentaci[oó]n", "Aislamiento del equipo"),
 ]
-SOLUCION_RULES += [
+SOLUCION_RULES = [
     (r"(desbloque(o|ar)|reset).*cuenta|restablecimi?ento.*contraseñ", "Desbloqueo / reseteo de cuenta"),
     (r"(limpieza|eliminaci[oó]n).*(malware|virus|troyano)", "Limpieza de malware"),
     (r"(regla|permit|bloque).*(firewall|fw|ips|waf)", "Ajuste de reglas en firewall/WAF"),
@@ -777,6 +777,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
