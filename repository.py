@@ -475,8 +475,8 @@ def infer_vulnerabilidad(texto: str) -> str:
 # Inferencia de Ubicación / Modo / Acción / Solución / Clasificación / Área GTIC / Sistema / Área
 # ---------------------------
 DEPTS_BO = {
-    "la paz": ["la paz", "lpz", "el alto"],
-    "santa cruz": ["santa cruz", "scz", "santa cruz de la sierra"],
+    "la paz": ["la paz", "lpz", "senkata"],
+    "santa cruz": ["santa cruz", "scz", "santa cruz de la sierra","PAU"],
     "cochabamba": ["cochabamba", "cbba", "cbb"],
     "chuquisaca": ["chuquisaca", "sucre"],
     "oruro": ["oruro"],
@@ -694,8 +694,17 @@ if st.button("Reportar", use_container_width=True):
         fila[18] = ""
         fila[20] = ""
 
+        if not fila[5]:
+            st.error("Falta definir que sistema fue afectado")
+            st.stop()
+        if not fila[12]:
+            st.error("Falta definir Con la Area de GTIC que se coordino")
+            st.stop()
         if not fila[13]:
             st.error("Falta definir quien es el encargado")
+            st.stop()
+        if not fila[14]:
+            st.error("Falta definir la hora del cierre del incidente")
             st.stop()
 
         # Completar otros campos desde el texto si faltan
@@ -763,6 +772,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
