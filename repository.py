@@ -237,13 +237,6 @@ def reubicar_codigos_mal_colocados(fila: List[str]) -> List[str]:
         elif code in ID_VULN_VALIDOS and not fila[17].strip():
             fila[17] = code; movimientos.append("Vulnerabilidad <- Causa")
         fila[18] = ""
-    if fila[20].strip() and CODE_RE.fullmatch(fila[20].strip()):
-        code = fila[20].strip()
-        if code in ID_AMENAZA_VALIDOS and not fila[19].strip():
-            fila[19] = code; movimientos.append("ID Amenaza <- Amenaza")
-        elif code in ID_VULN_VALIDOS and not fila[17].strip():
-            fila[17] = code; movimientos.append("Vulnerabilidad <- Amenaza")
-        fila[20] = ""
     return movimientos
 
 # ---------------------------
@@ -593,6 +586,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
