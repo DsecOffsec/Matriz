@@ -500,11 +500,16 @@ def detectar_ubicacion_ext(texto: str) -> str:
 
 def detectar_modo_reporte(texto: str) -> str:
     t = texto.lower()
-    if "jira" in t: return "Jira"
-    if "monitoreo" in t or "alerta" in t: return "Monitoreo"
-    if "teléfono" in t or "telefono" in t or "llam" in t: return "Teléfono"
-    if "correo" in t or "e-mail" in t or "email" in t: return "Correo"
-    return ""
+    if "jira" in t or "ticket" in t:
+        return "Jira"
+    if "monitoreo" in t or "alerta" in t:
+        return "Monitoreo"
+    if any(x in t for x in ["teléfono", "telefono", "llam", "llamada", "celular", "whatsapp"]):
+        return "Teléfono"
+    if any(x in t for x in ["correo", "e-mail", "email", "mail", "outlook"]):
+        return "Correo"
+    # Valor por defecto si no se menciona explícitamente
+    return "Teléfono"
 
 ACCION_RULES = [
     (r"reinici(ar|ó|o|amos|aron).*(equipo|pc|servicio|servidor)", "Reinicio de servicios/equipo"),
@@ -772,6 +777,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
