@@ -213,7 +213,6 @@ guia_amenazas = """
 4.7 - Acceso a información confidencial y de uso interno desde componentes tecnológicos reciclados o desechados.
 """
 
-# Conjuntos válidos y patrones
 ID_VULN_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_vuln))
 ID_AMENAZA_VALIDOS = set(re.findall(r'(\d+\.\d+)\s*-\s', guia_amenazas))
 CODE_RE = re.compile(r'^\d+\.\d+$')
@@ -508,7 +507,6 @@ def detectar_modo_reporte(texto: str) -> str:
         return "Teléfono"
     if any(x in t for x in ["correo", "e-mail", "email", "mail", "outlook"]):
         return "Correo"
-    # Valor por defecto si no se menciona explícitamente
     return "Teléfono"
 
 ACCION_RULES = [
@@ -517,12 +515,12 @@ ACCION_RULES = [
     (r"bloque(o|ar|ó).*cuenta|forz[oó].*contraseñ|cambio de contraseñ", "Bloqueo/cambio de contraseñas"),
     (r"aisl(ar|ado|amiento).*equipo|segmentaci[oó]n", "Aislamiento del equipo"),
 ]
-SOLUCION_RULES = [
-    (r"reinici(ar|ó).*(servicio|servidor)", "Reinicio de servicios"),
-    (r"ampli(ar|ación).*(licencia|licencias)", "Ampliación de licencias"),
-    (r"aplicar(on)? (parches|actualizaciones)|actualiz(ar|ó)", "Aplicación de actualizaciones"),
-    (r"restaur(ar|ó).*(backup|respaldo|copias)", "Restauración desde respaldo"),
-    (r"mitigaci[oó]n.*(waf|ddos)|\bwaf\b", "Mitigación en WAF"),
+SOLUCION_RULES += [
+    (r"(desbloque(o|ar)|reset).*cuenta|restablecimi?ento.*contraseñ", "Desbloqueo / reseteo de cuenta"),
+    (r"(limpieza|eliminaci[oó]n).*(malware|virus|troyano)", "Limpieza de malware"),
+    (r"(regla|permit|bloque).*(firewall|fw|ips|waf)", "Ajuste de reglas en firewall/WAF"),
+    (r"(whitelist|allowlist|excepci[oó]n)", "Creación de excepción/allowlist"),
+    (r"(reconfiguraci[oó]n|ajuste).*(pol[ií]tica|configuraci[oó]n)", "Reconfiguración de políticas"),
 ]
 def _collect(vals: set[str], rules: list[tuple[str,str]], texto: str):
     t = texto.lower()
@@ -721,15 +719,11 @@ if st.button("Reportar", use_container_width=True):
             fila[10] = infer_accion_inmediata(user_question)
         if not fila[11].strip():
             fila[11] = infer_solucion(user_question)
-        # Clasificación (normaliza o infiere; lista cerrada)
         fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
-        # Área GTIC coordinando
         if not fila[12].strip():
             fila[12] = infer_area_coordinando(user_question)
-        # Sistema (VPN, Correo, etc.)
         if not fila[5].strip():
             fila[5] = infer_sistema(user_question)
-        # Área (Contabilidad, etc.)
         if not fila[6].strip():
             fila[6] = infer_area(user_question)
 
@@ -742,6 +736,12 @@ if st.button("Reportar", use_container_width=True):
         # Estado por defecto si falta
         if not fila[16].strip():
             fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
+
+        if not fila[11].strip():
+            st.error(
+                "Falta describir mas la **Solución aplicada**. "
+            )
+            st.stop()
 
         # Generar CODIGO backend (col 1) según Fecha Apertura (col 2) o fecha actual
         codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
@@ -777,6 +777,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
