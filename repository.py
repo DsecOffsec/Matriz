@@ -561,53 +561,6 @@ if st.button("Reportar", use_container_width=True):
         # Campos obligatorios de Vulnerabilidad (18) y ID Amenaza (20) — si faltan, inferir por reglas
         texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
 
-        # 18 -> idx 17 (Vulnerabilidad)
-        if not fila[17].strip():
-            _PAT_VULN = [
-                (r"(contraseñ|password|clave).*(d[eé]bil|compartid|reutiliz)", "4.1"),
-                (r"(sin mfa|sin 2fa|mfa deshabilitad|autenticaci[oó]n.*d[eé]bil)", "4.3"),
-                (r"(permisos|roles|segregaci[oó]n|separaci[oó]n de deberes)", "4.2"),
-                (r"(software|sistema).*(desactualiz|sin parche|obsolet)", "4.10"),
-                (r"(parche|actualizaci[oó]n) (pendiente|faltante)", "4.11"),
-                (r"(antivirus|antimalware|edr|xdr) (ausente|desactivado|no instalado)", "4.29"),
-                (r"(alta disponibilidad|cluster|ha|redundan|punto [úu]nico de falla)", "4.39"),
-                (r"(sin monitoreo|sin alertas|no hay alertas|no se monitorea)", "4.19"),
-                (r"(capacidad|recurso(s)? de almacenamiento|cpu|memoria) (insuficiente|saturad)", "4.21"),
-                (r"(respaldo|backup|copia(s)? de seguridad) (ausente|no configurad|no se realiza)", "4.30"),
-            ]
-            t = texto_ctx.lower()
-            for pat, code in _PAT_VULN:
-                if re.search(pat, t):
-                    fila[17] = code
-                    break
-            if not fila[17].strip():
-                if re.search(r"(ca[ií]da|no disponible|indisponibilidad)", t):
-                    fila[17] = "4.39"
-
-        # 20 -> idx 19 (ID Amenaza)
-        if not fila[19].strip():
-            _PAT_AMENAZA = [
-                (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
-                (r"(ransom|cifrad[oa].*archivo|encrypt(ed)? files?)", "3.5"),
-                (r"(malware|virus|troyano|payload|backdoor)", "3.11"),
-                (r"(denegaci[oó]n|ddos)", "3.12"),
-                (r"(intercept|sniff|escucha)", "3.4"),
-                (r"(acceso no autorizado|elevaci[oó]n de privilegios)", "3.9"),
-                (r"(corte de energ[ií]a|apag[oó]n|fallas? el[eé]ctric[ao])", "4.6"),
-                (r"(temperatura|humedad)", "2.2"),
-                (r"(incendio)", "2.10"),
-                (r"(inundaci[oó]n)", "2.11"),
-                (r"(ca[ií]da|no disponible|indisponibilidad|servicio.*no responde|reinici(ar|o) (servicio|servidor))", "4.1"),
-            ]
-            t = texto_ctx.lower()
-            for pat, code in _PAT_AMENAZA:
-                if re.search(pat, t):
-                    fila[19] = code
-                    break
-            if not fila[19].strip():
-                if re.search(r"(ca[ií]da|no disponible|indisponibilidad|reinici(ar|o))", t):
-                    fila[19] = "4.1"
-
         # Validaciones finales (después de inferencias)
         requeridos = [
             (fila[5], "Falta definir el **Sistema** afectado."),
@@ -616,11 +569,6 @@ if st.button("Reportar", use_container_width=True):
         for valor, msg in requeridos:
             if not (valor or "").strip():
                 st.error(msg); st.stop()
-
-        if not (fila[17] or "").strip() or not (fila[19] or "").strip():
-            st.error("**Vulnerabilidad (18)** e **ID Amenaza (20)** son obligatorios. Añade contexto (p. ej., ‘contraseña débil’, ‘phishing’, ‘caída de servicio’) o ajusta reglas de inferencia.")
-            st.stop()
-
         # Estado por defecto si falta
         if not fila[16].strip():
             fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
@@ -662,6 +610,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
