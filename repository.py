@@ -13,7 +13,8 @@ st.title("MATRIZ DE REPORTES DSEC")
 # Conexiones y configuración
 # ---------------------------
 gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
-SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"  # ideal: mover a secrets
+# Recomendado: mover a secrets -> st.secrets["connections"]["SHEET_ID"]
+SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"
 sh = gc.open_by_key(SHEET_ID)
 ws = sh.worksheet("Reportes")
 
@@ -34,8 +35,8 @@ Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos
 4. **Área afectada** — El departamento o unidad donde se detectó el problema.  
 5. **Acción inmediata tomada** — Lo que hizo el usuario para mitigar el problema.  
 6. **Solución aplicada** — Acción final que resolvió el incidente.  
-7. **Área de GTIC que coordinó** — Infraestructura, Seguridad, Soporte Técnico, etc.  
-8. **Encargado** - El que encargado de todo el incidente/alerta.
+7. **Área de GTIC que coordinó** — DSEC - Seguridad, DITC - Infraestructura, DSTC - Soporte Técnico, DISC - Sistemas.  
+8. **Encargado** - El responsable del incidente/alerta.
 """)
 
 # ---------------------------
@@ -85,7 +86,7 @@ Columnas y formato:
 {CLASIF_TEXTO}
 11. Acción Inmediata
 12. Solución
-13. Area de GTIC - Coordinando → (DSEC - Seguridad, DITC - Infrestructura, DSTC = Soporte Técnico, DISC - Sistemas, …).
+13. Area de GTIC - Coordinando → (DSEC - Seguridad, DITC - Infraestructura, DSTC - Soporte Técnico, DISC - Sistemas, …).
 14. Encargado SI → solo si se menciona; no inventes nombres.
 15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
 16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
@@ -113,6 +114,12 @@ def sanitize_text(s: str) -> str:
         s = s[m.start():]
     return s.strip().strip('"').strip()
 
+def assert_20_pipes(s: str):
+    # Verifica estrictamente que haya 21 campos (20 pipes)
+    if s.count("|") != 20:
+        st.error(f"El modelo no devolvió 21 campos (pipes={s.count('|')}). Revisa el texto original.\n\nSalida:\n{s}")
+        st.stop()
+
 def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     avisos = []
     parts = [p.strip() for p in raw.split("|")]
@@ -128,12 +135,6 @@ def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
         parts += [""] * faltan
     parts = [p.strip() for p in parts]
     return parts, avisos
-
-def valida_id(code: str, validos: set) -> str:
-    code = code.strip()
-    if re.fullmatch(r"\d+\.\d+", code) and code in validos:
-        return code
-    return ""
 
 def parse_dt(s: str):
     s = s.strip()
@@ -153,7 +154,7 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
     return ""
 
 # ---------------------------
-# Fechas/horas del texto (am/pm y 24h)
+# Fechas/horas del texto (am/pm y 24h) — para calcular "Tiempo Solución" por horas si aplica
 # ---------------------------
 MESES_ES = r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
 
@@ -162,7 +163,7 @@ def hay_fecha_explicita(texto: str) -> bool:
     t = texto.lower()
     if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", t):  # 2025-08-10
         return True
-    if re.search(r"\b\d{1,2}[/-]\d{1,2}/\d{4}\b", t):  # 10/08/2025 o 10-08-2025 (exige año de 4 dígitos)
+    if re.search(r"\b\d{1,2}[/-]\d{1,2}/\d{4}\b", t):  # 10/08/2025 o 10-08-2025 (exige año)
         return True
     if re.search(rf"\b\d{{1,2}}\s+de\s+(?:{MESES_ES})\s+de\s+\d{{4}}\b", t):  # 10 de agosto de 2025
         return True
@@ -199,6 +200,7 @@ def extraer_horas_any(texto: str) -> list[str]:
     return out
 
 def calcula_tiempo_desde_texto(texto: str) -> str:
+    # Si hay al menos dos horas en el texto, calcula diferencia en el día actual (sin inventar fecha en columnas)
     hh = extraer_horas_any(texto)
     if len(hh) < 2:
         return ""
@@ -213,83 +215,12 @@ def calcula_tiempo_desde_texto(texto: str) -> str:
     minutos = (delta.seconds % 3600) // 60
     return f"{horas} horas {minutos} minutos"
 
-def fechas_desde_horas_si_aplica(texto: str) -> tuple[str, str]:
-    """Si no hay fecha con año explícito, usa la fecha de hoy con las horas encontradas."""
-    if hay_fecha_explicita(texto):
-        return "", ""
-    hh = extraer_horas_any(texto)
-    if not hh:
-        return "", ""
-    today = datetime.now(TZ).date()
-    apertura = f"{today} {hh[0]}"
-    cierre = f"{today} {hh[-1]}" if len(hh) > 1 else ""
-    return apertura, cierre
-
-# ---------------------------
-# Reubicador de códigos mal colocados (Causa/Amenaza)
-# ---------------------------
-def reubicar_codigos_mal_colocados(fila: List[str]) -> List[str]:
-    movimientos = []
-    if fila[18].strip() and CODE_RE.fullmatch(fila[18].strip()):
-        code = fila[18].strip()
-        if code in ID_AMENAZA_VALIDOS and not fila[19].strip():
-            fila[19] = code; movimientos.append("ID Amenaza <- Causa")
-        elif code in ID_VULN_VALIDOS and not fila[17].strip():
-            fila[17] = code; movimientos.append("Vulnerabilidad <- Causa")
-        fila[18] = ""
-    return movimientos
-
-# ---------------------------
-# Reglas determinísticas de respaldo (Amenaza/Vulnerabilidad)
-# ---------------------------
-_PAT_AMENAZA = [
-    (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
-    (r"(ransom|cifrad[oa].*archivo|encrypt(ed)? files?)", "3.5"),
-    (r"(malware|virus|troyano|payload|backdoor)", "3.11"),
-    (r"(denegaci[oó]n|ddos)", "3.12"),
-    (r"(intercept|sniff|escucha)", "3.4"),
-    (r"(acceso no autorizado|elevaci[oó]n de privilegios)", "3.9"),
-    (r"(corte de energ[ií]a|apag[oó]n|fallas? el[eé]ctric[ao])", "4.6"),
-    (r"(temperatura|humedad)", "2.2"),
-    (r"(incendio)", "2.10"),
-    (r"(inundaci[oó]n)", "2.11"),
-    (r"(ca[ií]da|no disponible|indisponibilidad|servicio.*no responde|reinici(ar|o) (servicio|servidor))", "4.1"),
-]
-_PAT_VULN = [
-    (r"(contraseñ|password|clave).*(d[eé]bil|compartid|reutiliz)", "4.1"),
-    (r"(sin mfa|sin 2fa|mfa deshabilitad|autenticaci[oó]n.*d[eé]bil)", "4.3"),
-    (r"(permisos|roles|segregaci[oó]n|separaci[oó]n de deberes)", "4.2"),
-    (r"(software|sistema).*(desactualiz|sin parche|obsolet)", "4.10"),
-    (r"(parche|actualizaci[oó]n) (pendiente|faltante)", "4.11"),
-    (r"(antivirus|antimalware|edr|xdr) (ausente|desactivado|no instalado)", "4.29"),
-    (r"(alta disponibilidad|cluster|ha|redundan|punto [úu]nico de falla)", "4.39"),
-    (r"(sin monitoreo|sin alertas|no hay alertas|no se monitorea)", "4.19"),
-    (r"(capacidad|recurso(s)? de almacenamiento|cpu|memoria) (insuficiente|saturad)", "4.21"),
-    (r"(respaldo|backup|copia(s)? de seguridad) (ausente|no configurad|no se realiza)", "4.30"),
-]
-
-def infer_amenaza(texto: str) -> str:
-    t = texto.lower()
-    for pat, code in _PAT_AMENAZA:
-        if re.search(pat, t): return code
-    if re.search(r"(ca[ií]da|no disponible|indisponibilidad|reinici(ar|o))", t):
-        return "4.1"
-    return ""
-
-def infer_vulnerabilidad(texto: str) -> str:
-    t = texto.lower()
-    for pat, code in _PAT_VULN:
-        if re.search(pat, t): return code
-    if re.search(r"(ca[ií]da|no disponible|indisponibilidad)", t):
-        return "4.39"
-    return ""
-
 # ---------------------------
 # Inferencia de Ubicación / Modo / Acción / Solución / Clasificación / Área GTIC / Sistema / Área
 # ---------------------------
 DEPTS_BO = {
     "la paz": ["la paz", "lpz", "senkata"],
-    "santa cruz": ["santa cruz", "scz", "santa cruz de la sierra","PAU"],
+    "santa cruz": ["santa cruz", "scz", "santa cruz de la sierra", "pau"],
     "cochabamba": ["cochabamba", "cbba", "cbb"],
     "chuquisaca": ["chuquisaca", "sucre"],
     "oruro": ["oruro"],
@@ -325,9 +256,9 @@ def detectar_modo_reporte(texto: str) -> str:
 
 ACCION_RULES = [
     (r"reinici(ar|ó|o|amos|aron).*(equipo|pc|servicio|servidor)", "Reinicio de servicios/equipo"),
-    (r"verific(ar|ó|aron).*conectividad|ping|traz", "Verificación de conectividad"),
-    (r"bloque(o|ar|ó).*cuenta|forz[oó].*contraseñ|cambio de contraseñ", "Bloqueo/cambio de contraseñas"),
-    (r"aisl(ar|ado|amiento).*equipo|segmentaci[oó]n", "Aislamiento del equipo"),
+    (r"(verific(ar|ó|aron).*(conectividad|ping|traz))", "Verificación de conectividad"),
+    (r"(bloque(o|ar|ó).*(cuenta)|forz[oó].*contraseñ|cambio de contraseñ)", "Bloqueo/cambio de contraseñas"),
+    (r"aisl(ar|ado|amiento).*(equipo)|segmentaci[oó]n", "Aislamiento del equipo"),
 ]
 SOLUCION_RULES = [
     (r"(desbloque(o|ar)|reset).*cuenta|restablecimi?ento.*contraseñ", "Desbloqueo / reseteo de cuenta"),
@@ -391,11 +322,14 @@ def normaliza_clasificacion_final(valor: str) -> str:
 
 def infer_area_coordinando(texto: str) -> str:
     t = texto.lower()
-    if "seguridad" in t: return "Seguridad Informática"
-    if "redes" in t or "vpn" in t or "cisco" in t: return "Redes"
-    if "infraestructura" in t: return "Infraestructura"
-    if "soporte" in t or "mesa de ayuda" in t: return "Soporte Técnico"
-    if "sistemas" in t or "erp" in t or "base de datos" in t: return "Sistemas"
+    if "seguridad" in t:
+        return "DSEC - Seguridad"
+    if "infraestructura" in t or "redes" in t or "vpn" in t or "cisco" in t:
+        return "DITC - Infraestructura"
+    if "soporte" in t or "mesa de ayuda" in t:
+        return "DSTC - Soporte Técnico"
+    if "sistemas" in t or "erp" in t or "base de datos" in t:
+        return "DISC - Sistemas"
     return ""
 
 def infer_sistema(texto: str) -> str:
@@ -415,6 +349,13 @@ def infer_area(texto: str) -> str:
     m = re.search(r"(área|area|departamento|unidad)\s+de\s+([a-záéíóúñ ]+)", t)
     if m:
         return m.group(2).strip().title()
+    return ""
+
+def norm_opcion(valor: str, validos: list[str]) -> str:
+    v = (valor or "").strip().lower()
+    for x in validos:
+        if v == x.lower():
+            return x
     return ""
 
 # ---------------------------
@@ -481,72 +422,117 @@ if st.button("Reportar", use_container_width=True):
             st.stop()
 
         cleaned = sanitize_text(response_text)
+        assert_20_pipes(cleaned)  # Verificación estricta de 21 columnas
         fila, avisos = normalize_21_fields(cleaned)
 
-        # Si el texto NO trae fecha explícita (con año), vacía campos 2 y 15
+        # Si el texto NO trae fecha explícita (con año), vacía campos 2 y 15 (no inventar fechas)
         if not hay_fecha_explicita(user_question):
             fila[1] = ""   # Fecha y Hora de Apertura
             fila[14] = ""  # Fecha y Hora de Cierre
 
-        # Completar fechas a partir de horas si solo hay horas (am/pm o 24h)
-        ap_auto, ci_auto = fechas_desde_horas_si_aplica(user_question)
-        if not fila[1].strip() and ap_auto: fila[1] = ap_auto
-        if not fila[14].strip() and ci_auto: fila[14] = ci_auto
+        # --- NO autocompletar fechas desde horas (para cumplir la regla de no inventar fechas) ---
+        # Tiempo de solución: intentar por fechas (si existen)
+        if not fila[15].strip():
+            fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
+        # Si no se puede por fechas, calcular por horas mencionadas en el texto (no escribe fechas en columnas)
+        if not fila[15].strip():
+            fila[15] = calcula_tiempo_desde_texto(user_question)
 
-        # Fallback determinístico si faltan Vulnerabilidad/Amenaza
-        texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
+        # Completar / normalizar desde el texto (si faltan) — hacerlo ANTES de validar requeridos
+        fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question), ["Correo", "Jira", "Teléfono", "Monitoreo"]) or "Teléfono"
 
-        # Enfoque estricto: Causa (19) y Amenaza (21) SIEMPRE vacías
-        fila[17] = ""
-        fila[18] = ""
-        fila[19] = ""
-        fila[20] = ""
-
-        if not fila[5]:
-            st.error("Falta definir que sistema fue afectado")
-            st.stop()
-        if not fila[6]:
-            st.error("Falta definir que area reporto el problema")
-            st.stop()
-        if not fila[12]:
-            st.error("Falta definir Con la Area de GTIC que se coordino")
-            st.stop()
-        if not fila[13]:
-            st.error("Falta definir quien es el encargado")
-            st.stop()
-
-        # Completar otros campos desde el texto si faltan
-        if not fila[2].strip():
-            fila[2] = detectar_modo_reporte(user_question)
         if not fila[7].strip():
-            fila[7] = detectar_ubicacion_ext(user_question) or "La paz"
+            fila[7] = detectar_ubicacion_ext(user_question) or "La Paz, Bolivia"
+
         if not fila[10].strip():
             fila[10] = infer_accion_inmediata(user_question)
+
         if not fila[11].strip():
             fila[11] = infer_solucion(user_question)
+
         fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
+
         if not fila[12].strip():
             fila[12] = infer_area_coordinando(user_question)
+
         if not fila[5].strip():
             fila[5] = infer_sistema(user_question)
+
         if not fila[6].strip():
             fila[6] = infer_area(user_question)
 
-        # Tiempo de solución: por fechas o, si no, por horas
-        if not fila[15].strip():
-            fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
-        if not fila[15].strip():
-            fila[15] = calcula_tiempo_desde_texto(user_question)
+        # Campos obligatorios de Vulnerabilidad (18) y ID Amenaza (20) — si faltan, inferir por reglas
+        texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
+
+        # 18 -> idx 17 (Vulnerabilidad): código
+        if not fila[17].strip():
+            # Reglas determinísticas de respaldo (Vulnerabilidad)
+            _PAT_VULN = [
+                (r"(contraseñ|password|clave).*(d[eé]bil|compartid|reutiliz)", "4.1"),
+                (r"(sin mfa|sin 2fa|mfa deshabilitad|autenticaci[oó]n.*d[eé]bil)", "4.3"),
+                (r"(permisos|roles|segregaci[oó]n|separaci[oó]n de deberes)", "4.2"),
+                (r"(software|sistema).*(desactualiz|sin parche|obsolet)", "4.10"),
+                (r"(parche|actualizaci[oó]n) (pendiente|faltante)", "4.11"),
+                (r"(antivirus|antimalware|edr|xdr) (ausente|desactivado|no instalado)", "4.29"),
+                (r"(alta disponibilidad|cluster|ha|redundan|punto [úu]nico de falla)", "4.39"),
+                (r"(sin monitoreo|sin alertas|no hay alertas|no se monitorea)", "4.19"),
+                (r"(capacidad|recurso(s)? de almacenamiento|cpu|memoria) (insuficiente|saturad)", "4.21"),
+                (r"(respaldo|backup|copia(s)? de seguridad) (ausente|no configurad|no se realiza)", "4.30"),
+            ]
+            t = texto_ctx.lower()
+            for pat, code in _PAT_VULN:
+                if re.search(pat, t):
+                    fila[17] = code
+                    break
+            if not fila[17].strip():
+                # fallback genérico si el texto indica caída/indisponibilidad (riesgo de HA)
+                if re.search(r"(ca[ií]da|no disponible|indisponibilidad)", t):
+                    fila[17] = "4.39"
+
+        # 20 -> idx 19 (ID Amenaza): código
+        if not fila[19].strip():
+            _PAT_AMENAZA = [
+                (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
+                (r"(ransom|cifrad[oa].*archivo|encrypt(ed)? files?)", "3.5"),
+                (r"(malware|virus|troyano|payload|backdoor)", "3.11"),
+                (r"(denegaci[oó]n|ddos)", "3.12"),
+                (r"(intercept|sniff|escucha)", "3.4"),
+                (r"(acceso no autorizado|elevaci[oó]n de privilegios)", "3.9"),
+                (r"(corte de energ[ií]a|apag[oó]n|fallas? el[eé]ctric[ao])", "4.6"),
+                (r"(temperatura|humedad)", "2.2"),
+                (r"(incendio)", "2.10"),
+                (r"(inundaci[oó]n)", "2.11"),
+                (r"(ca[ií]da|no disponible|indisponibilidad|servicio.*no responde|reinici(ar|o) (servicio|servidor))", "4.1"),
+            ]
+            t = texto_ctx.lower()
+            for pat, code in _PAT_AMENAZA:
+                if re.search(pat, t):
+                    fila[19] = code
+                    break
+            if not fila[19].strip():
+                # fallback por caída/indisponibilidad
+                if re.search(r"(ca[ií]da|no disponible|indisponibilidad|reinici(ar|o))", t):
+                    fila[19] = "4.1"
+
+        # Validaciones finales (después de inferencias)
+        requeridos = [
+            (fila[5], "Falta definir el **Sistema** afectado."),
+            (fila[6], "Falta definir el **Área** que reportó el problema."),
+            (fila[12], "Falta definir el **Área de GTIC que coordinó**."),
+            (fila[13], "Falta definir el **Encargado**."),
+            (fila[11], "Falta describir mejor la **Solución aplicada**.")
+        ]
+        for valor, msg in requeridos:
+            if not (valor or "").strip():
+                st.error(msg); st.stop()
+
+        if not (fila[17] or "").strip() or not (fila[19] or "").strip():
+            st.error("**Vulnerabilidad (18)** e **ID Amenaza (20)** son obligatorios. Añade contexto (p. ej., ‘contraseña débil’, ‘phishing’, ‘caída de servicio’) o ajusta reglas de inferencia.")
+            st.stop()
 
         # Estado por defecto si falta
         if not fila[16].strip():
             fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
-
-        if not fila[11].strip():
-            st.error(
-                "Falta describir mas la **Solución aplicada**. "
-            )
-            st.stop()
 
         # Generar CODIGO backend (col 1) según Fecha Apertura (col 2) o fecha actual
         codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
@@ -557,6 +543,8 @@ if st.button("Reportar", use_container_width=True):
             st.error(f"La salida quedó con {len(fila)} columnas tras saneo (esperado: 21).")
             st.code(cleaned, language="text")
             st.stop()
+
+        # Timestamp servidor (col 22 solo para hoja de cálculo)
         registro_ts = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
         fila_con_ts = fila + [registro_ts]
         
@@ -566,19 +554,16 @@ if st.button("Reportar", use_container_width=True):
             "Sistema","Area","Ubicación","Impacto","Clasificación","Acción Inmediata","Solución",
             "Area de GTIC - Coordinando","Encargado SI","Fecha y Hora de Cierre","Tiempo Solución",
             "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza",
-            "Fecha y Hora de Registro"   # nueva col 22 (servidor)
+            "Fecha y Hora de Registro"
         ]
         
         df_prev = pd.DataFrame([fila_con_ts], columns=columnas)
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
 
-        # Info de correcciones automáticas (si las hubo)
-        avisos_extra = []
-        #if movimientos:
-        #    avisos_extra.append("Se reubicaron códigos: " + ", ".join(movimientos))
-        #if avisos or avisos_extra:
-        #    st.info(" | ".join(avisos + avisos_extra))
+        # Avisos de saneo (si hubo)
+        if avisos:
+            st.info(" | ".join(avisos))
 
         # Guardado
         try:
@@ -586,10 +571,3 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
-
-
-
-
-
-
-
