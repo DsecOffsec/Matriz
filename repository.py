@@ -338,6 +338,20 @@ def detectar_modo_reporte(texto: str) -> str:
         return "Correo"
     return "Teléfono"
 
+def extraer_encargado(texto: str) -> str:
+    """
+    Busca frases como 'el encargado es <NOMBRE>' o 'responsable <NOMBRE>'.
+    Devuelve el nombre si lo encuentra.
+    """
+    t = texto.lower()
+    m = re.search(r"(encargad[oa]|responsable)\s+(es\s+)?([a-záéíóúñ\s]+)", texto, re.IGNORECASE)
+    if m:
+        nombre = m.group(3).strip()
+        # Cortar si hay 'del área' o frases largas
+        nombre = re.split(r"\s+(del|de la|de los|de las)\b", nombre, 1)[0].strip()
+        return nombre.title()
+    return ""
+
 ACCION_RULES = [
     (r"reinici(ar|ó|o|amos|aron).*(equipo|pc|servicio|servidor)", "Reinicio de servicios/equipo"),
     (r"(verific(ar|ó|aron).*(conectividad|ping|traz))", "Verificación de conectividad"),
@@ -552,6 +566,10 @@ if st.button("Reportar", use_container_width=True):
         if not fila[12].strip():
             fila[12] = infer_area_coordinando(user_question)
 
+        # Extraer encargado si se menciona explícitamente
+        if not fila[13].strip():
+            fila[13] = extraer_encargado(user_question)
+
         if not fila[5].strip():
             fila[5] = infer_sistema(user_question)
 
@@ -610,6 +628,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
