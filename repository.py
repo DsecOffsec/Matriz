@@ -137,14 +137,6 @@ def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     parts = [p.strip() for p in parts]
     return parts, avisos
 
-cleaned = sanitize_text(response_text)
-# (opcional) assert_20_pipes(cleaned)  # solo aviso
-fila, avisos = normalize_21_fields(cleaned)
-
-# 👉 aplicar limpiezas y normalizaciones aquí
-fila = clean_empty_tokens(fila)
-fila[3] = norm_evento_incidente(fila[3])
-
 def is_empty_token(x: str) -> bool:
     # tú dijiste que solo quieres limpiar "vacio" si algún día lo agregas,
     # ahora mismo lo dejo para detectar solo vacío literal:
@@ -160,6 +152,14 @@ def norm_evento_incidente(v: str) -> str:
     if "evento" in v2:
         return "Evento"
     return "Incidente"
+
+cleaned = sanitize_text(response_text)
+fila, avisos = normalize_21_fields(cleaned)
+
+# aplicar limpiezas y normalizaciones
+fila = clean_empty_tokens(fila)
+fila[3] = norm_evento_incidente(fila[3])
+
 
 def parse_dt(s: str):
     s = s.strip()
@@ -532,9 +532,6 @@ if st.button("Reportar", use_container_width=True):
         cleaned = sanitize_text(response_text)
         # (opcional) assert_20_pipes(cleaned)   # solo si quieres el aviso
         fila, avisos = normalize_21_fields(cleaned)
-
-        # Si el texto NO trae fecha explícita (con año), vacía campos 2 y 15 (no inventar fechas)
-        # Si el texto NO trae fecha explícita (con año), vacía campos 2 y 15 (no inventar fechas)
             # Autocompletar fechas: 
         # - "5 de septiembre 15:00" -> usa año actual
         # - "15:00" sin fecha -> usa hoy
@@ -686,6 +683,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
