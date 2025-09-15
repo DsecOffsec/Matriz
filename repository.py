@@ -99,6 +99,13 @@ Columnas y formato:
 [REPORTE DE ENTRADA]:
 """
 
+cleaned = sanitize_text(response_text)
+fila, avisos = normalize_21_fields(cleaned)
+
+# aplicar limpiezas y normalizaciones
+fila = clean_empty_tokens(fila)
+fila[3] = norm_evento_incidente(fila[3])
+
 # ---------------------------
 # Utilidades de saneamiento / validación
 # ---------------------------
@@ -135,21 +142,29 @@ def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     parts = [p.strip() for p in parts]
     return parts, avisos
 
-def _is_empty_token(x: str) -> bool:
-    return x.strip().lower() in {"vacio", "vacío", "na", "n/a", "none", "null"}
+cleaned = sanitize_text(response_text)
+# (opcional) assert_20_pipes(cleaned)  # solo aviso
+fila, avisos = normalize_21_fields(cleaned)
+
+# 👉 aplicar limpiezas y normalizaciones aquí
+fila = clean_empty_tokens(fila)
+fila[3] = norm_evento_incidente(fila[3])
+
+def is_empty_token(x: str) -> bool:
+    # tú dijiste que solo quieres limpiar "vacio" si algún día lo agregas,
+    # ahora mismo lo dejo para detectar solo vacío literal:
+    return x.strip().lower() in {""}
 
 def clean_empty_tokens(parts: list[str]) -> list[str]:
-    return [("" if _is_empty_token(p) else p) for p in parts]
+    return [("" if is_empty_token(p) else p) for p in parts]
 
 def norm_evento_incidente(v: str) -> str:
     v2 = (v or "").strip().lower()
-    if "inciden" in v2: 
+    if "inciden" in v2:
         return "Incidente"
     if "evento" in v2:
         return "Evento"
-    # Heurística: si el texto sugiere ataque/falla → Incidente
     return "Incidente"
-
 
 def parse_dt(s: str):
     s = s.strip()
@@ -172,6 +187,89 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
 # Fechas/horas del texto (am/pm y 24h) — para calcular "Tiempo Solución" por horas si aplica
 # ---------------------------
 MESES_ES = r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
+
+# Meses en español → número (admite 'setiembre')
+MESES_MAP = {
+    "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
+    "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9,
+    "octubre": 10, "noviembre": 11, "diciembre": 12,
+}
+
+ISO_FECHA_RE = re.compile(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b")              # 2025-09-05
+DMY_SLASH_RE = re.compile(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b")   # 5/9[/2025] o 05-09-2025
+DM_DE_MES_RE = re.compile(
+    rf"\b(\d{{1,2}})\s+de\s+(?:{MESES_ES})(?:\s+de\s+(\d{{4}}))?\b", re.IGNORECASE
+)
+
+def _safe_int(x: str) -> int | None:
+    try:
+        return int(x)
+    except Exception:
+        return None
+
+def _year_or_current(y: str | None) -> int:
+    if not y:
+        return datetime.now(TZ).year
+    yi = _safe_int(y)
+    if yi is None:
+        return datetime.now(TZ).year
+    if 0 <= yi < 100:
+        return 2000 + yi
+    return yi
+
+def _first_date_in_text(texto: str) -> datetime.date | None:
+    t = texto.lower()
+
+    m = ISO_FECHA_RE.search(t)
+    if m:
+        y, mo, d = map(int, m.groups())
+        return datetime(y, mo, d, tzinfo=TZ).date()
+
+    m = DM_DE_MES_RE.search(t)
+    if m:
+        d = int(m.group(1))
+        mes_txt = m.group(0).lower()
+        # localizar el nombre del mes capturado
+        mes_name = re.search(rf"{MESES_ES}", mes_txt).group(0)
+        mo = MESES_MAP.get(mes_name, None)
+        y = _year_or_current(m.group(2))
+        if mo:
+            return datetime(y, mo, d, tzinfo=TZ).date()
+
+    m = DMY_SLASH_RE.search(t)
+    if m:
+        d = int(m.group(1)); mo = int(m.group(2)); y = _year_or_current(m.group(3))
+        # Evita confundir con hora (hh:mm) porque aquí el separador no es “:”
+        if 1 <= d <= 31 and 1 <= mo <= 12:
+            return datetime(y, mo, d, tzinfo=TZ).date()
+
+    return None
+
+def fechas_desde_texto(texto: str) -> tuple[str, str]:
+    """
+    Retorna (apertura, cierre) en "YYYY-MM-DD HH:MM".
+    - Si hay día+mes (con o sin año) y horas, usa esa fecha.
+    - Si solo hay horas, usa fecha de hoy.
+    - Si no hay horas, retorna ("","") aunque haya fecha.
+    - Si hay dos o más horas, cierre = última; si la última < primera, suma 1 día.
+    """
+    horas = extraer_horas_any(texto)
+    if not horas:
+        return "", ""
+
+    base_date = _first_date_in_text(texto) or datetime.now(TZ).date()
+    a_str = f"{base_date} {horas[0]}"
+    if len(horas) > 1:
+        c_date = base_date
+        # si la última hora es “menor” a la primera, asumimos que cruza medianoche
+        h0 = datetime.strptime(horas[0], "%H:%M").time()
+        h1 = datetime.strptime(horas[-1], "%H:%M").time()
+        if (h1.hour, h1.minute) < (h0.hour, h0.minute):
+            c_date = base_date + timedelta(days=1)
+        c_str = f"{c_date} {horas[-1]}"
+    else:
+        c_str = ""
+    return a_str, c_str
 
 def hay_fecha_explicita(texto: str) -> bool:
     """True solo si hay fecha con AÑO explícito."""
@@ -441,10 +539,17 @@ if st.button("Reportar", use_container_width=True):
         fila, avisos = normalize_21_fields(cleaned)
 
         # Si el texto NO trae fecha explícita (con año), vacía campos 2 y 15 (no inventar fechas)
-        if not hay_fecha_explicita(user_question):
-            fila[1] = ""   # Fecha y Hora de Apertura
-            fila[14] = ""  # Fecha y Hora de Cierre
+        # Si el texto NO trae fecha explícita (con año), vacía campos 2 y 15 (no inventar fechas)
+            # Autocompletar fechas: 
+        # - "5 de septiembre 15:00" -> usa año actual
+        # - "15:00" sin fecha -> usa hoy
+        ap_auto, ci_auto = fechas_desde_texto(user_question)
+        if not fila[1].strip() and ap_auto:
+            fila[1] = ap_auto
+        if not fila[14].strip() and ci_auto:
+            fila[14] = ci_auto
 
+        
         # --- NO autocompletar fechas desde horas (para cumplir la regla de no inventar fechas) ---
         # Tiempo de solución: intentar por fechas (si existen)
         if not fila[15].strip():
@@ -586,4 +691,5 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
