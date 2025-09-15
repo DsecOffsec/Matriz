@@ -69,8 +69,9 @@ Eres un asistente experto en seguridad informática. Convierte el reporte en UNA
 Reglas:
 - Usa el ORDEN EXACTO de las 21 columnas de abajo.
 - Si un campo llevaría |, reemplázalo por /.
-- Si no puedes deducir un valor, déjalo vacío… EXCEPTO los campos 18 (Vulnerabilidad) y 20 (ID Amenaza), que son OBLIGATORIOS.
-- Zona horaria: America/La_Paz.
+- Zona horaria: America/La_Paz. En el año 2025
+- NO inventes ni completes los campos 18 (Vulnerabilidad), 19 (Causa), 20 (ID Amenaza) y 21 (Amenaza).
+  Déjalos vacíos siempre.
 - NO inventes fechas: si el reporte no incluye una fecha explícita con día/mes/año (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacíos los campos de fecha. Si solo hay horas, no pongas fecha.
 
 Columnas y formato:
@@ -513,6 +514,12 @@ if st.button("Reportar", use_container_width=True):
         fila = clean_empty_tokens(fila)
         fila[3] = norm_evento_incidente(fila[3])
 
+                # Forzar a vacío los campos 18-21
+        fila[17] = ""  # Vulnerabilidad
+        fila[18] = ""  # Causa
+        fila[19] = ""  # ID Amenaza
+        fila[20] = ""  # Amenaza
+
         # Autocompletar fechas desde el texto
         # - "5 de septiembre 15:00" -> año actual si falta
         # - "15:00" sin fecha -> hoy
@@ -658,6 +665,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
