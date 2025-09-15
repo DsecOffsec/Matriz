@@ -2,6 +2,7 @@ import streamlit as st
 import gspread
 import pandas as pd
 import re
+from typing import Optional
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import google.generativeai as genai
@@ -200,7 +201,7 @@ def _year_or_current(y: str | None) -> int:
         return 2000 + yi
     return yi
 
-def _first_date_in_text(texto: str) -> datetime.date | None:
+def _first_date_in_text(texto: str) -> Optional[datetime.date]:
     t = texto.lower()
 
     m = ISO_FECHA_RE.search(t)
@@ -657,6 +658,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
