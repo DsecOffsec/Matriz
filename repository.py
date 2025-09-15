@@ -99,12 +99,7 @@ Columnas y formato:
 [REPORTE DE ENTRADA]:
 """
 
-cleaned = sanitize_text(response_text)
-fila, avisos = normalize_21_fields(cleaned)
 
-# aplicar limpiezas y normalizaciones
-fila = clean_empty_tokens(fila)
-fila[3] = norm_evento_incidente(fila[3])
 
 # ---------------------------
 # Utilidades de saneamiento / validación
@@ -691,5 +686,6 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
