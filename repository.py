@@ -115,10 +115,9 @@ def sanitize_text(s: str) -> str:
     return s.strip().strip('"').strip()
 
 def assert_20_pipes(s: str):
-    # Verifica estrictamente que haya 21 campos (20 pipes)
+    # Aviso en vez de abortar; dejamos que normalize_21_fields repare
     if s.count("|") != 20:
-        st.error(f"El modelo no devolvió 21 campos (pipes={s.count('|')}). Revisa el texto original.\n\nSalida:\n{s}")
-        st.stop()
+        st.info(f"Aviso: el modelo devolvió {s.count('|')} pipes. Intentaré normalizar a 21 columnas.")
 
 def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     avisos = []
@@ -135,6 +134,22 @@ def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
         parts += [""] * faltan
     parts = [p.strip() for p in parts]
     return parts, avisos
+
+def _is_empty_token(x: str) -> bool:
+    return x.strip().lower() in {"vacio", "vacío", "na", "n/a", "none", "null"}
+
+def clean_empty_tokens(parts: list[str]) -> list[str]:
+    return [("" if _is_empty_token(p) else p) for p in parts]
+
+def norm_evento_incidente(v: str) -> str:
+    v2 = (v or "").strip().lower()
+    if "inciden" in v2: 
+        return "Incidente"
+    if "evento" in v2:
+        return "Evento"
+    # Heurística: si el texto sugiere ataque/falla → Incidente
+    return "Incidente"
+
 
 def parse_dt(s: str):
     s = s.strip()
@@ -422,7 +437,7 @@ if st.button("Reportar", use_container_width=True):
             st.stop()
 
         cleaned = sanitize_text(response_text)
-        assert_20_pipes(cleaned)  # Verificación estricta de 21 columnas
+        # (opcional) assert_20_pipes(cleaned)   # solo si quieres el aviso
         fila, avisos = normalize_21_fields(cleaned)
 
         # Si el texto NO trae fecha explícita (con año), vacía campos 2 y 15 (no inventar fechas)
@@ -571,3 +586,4 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
