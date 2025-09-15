@@ -410,9 +410,10 @@ def infer_area_coordinando(texto: str) -> str:
         return "DITC - Infraestructura"
     if "soporte" in t or "mesa de ayuda" in t:
         return "DSTC - Soporte Técnico"
-    if "sistemas" in t o r "erp" in t or "base de datos" in t:
+    if "sistemas" in t or "erp" in t or "base de datos" in t:
         return "DISC - Sistemas"
     return ""
+
 
 def infer_sistema(texto: str) -> str:
     t = texto.lower()
@@ -656,6 +657,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
