@@ -99,8 +99,6 @@ Columnas y formato:
 [REPORTE DE ENTRADA]:
 """
 
-
-
 # ---------------------------
 # Utilidades de saneamiento / validación
 # ---------------------------
@@ -126,9 +124,11 @@ def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     parts = [p.strip() for p in raw.split("|")]
     original_count = len(parts)
     if original_count > 21:
-        keep_tail = 21 - 5  # 16 últimas columnas (6..21)
-        desc = " | ".join(parts[4: original_count - keep_tail])
-        parts = parts[:4] + [desc] + parts[original_count - keep_tail:]
+        # Fusiona el excedente en 'Descripción' (columna 5)
+        keep_tail = 16  # columnas 6..21
+        left_end = max(4, original_count - keep_tail)
+        desc = " | ".join(parts[4:left_end])
+        parts = parts[:4] + [desc] + parts[left_end:]
         avisos.append(f"Se detectaron {original_count} campos; se fusionó el excedente en 'Descripción'.")
     if len(parts) < 21:
         faltan = 21 - len(parts)
@@ -138,8 +138,7 @@ def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     return parts, avisos
 
 def is_empty_token(x: str) -> bool:
-    # tú dijiste que solo quieres limpiar "vacio" si algún día lo agregas,
-    # ahora mismo lo dejo para detectar solo vacío literal:
+    # Por ahora, solo vacío literal (""), como pediste
     return x.strip().lower() in {""}
 
 def clean_empty_tokens(parts: list[str]) -> list[str]:
@@ -152,14 +151,6 @@ def norm_evento_incidente(v: str) -> str:
     if "evento" in v2:
         return "Evento"
     return "Incidente"
-
-cleaned = sanitize_text(response_text)
-fila, avisos = normalize_21_fields(cleaned)
-
-# aplicar limpiezas y normalizaciones
-fila = clean_empty_tokens(fila)
-fila[3] = norm_evento_incidente(fila[3])
-
 
 def parse_dt(s: str):
     s = s.strip()
@@ -179,17 +170,14 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
     return ""
 
 # ---------------------------
-# Fechas/horas del texto (am/pm y 24h) — para calcular "Tiempo Solución" por horas si aplica
+# Fechas/horas del texto (am/pm y 24h)
 # ---------------------------
 MESES_ES = r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
-
-# Meses en español → número (admite 'setiembre')
 MESES_MAP = {
     "enero": 1, "febrero": 2, "marzo": 3, "abril": 4, "mayo": 5, "junio": 6,
     "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9,
     "octubre": 10, "noviembre": 11, "diciembre": 12,
 }
-
 ISO_FECHA_RE = re.compile(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b")              # 2025-09-05
 DMY_SLASH_RE = re.compile(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b")   # 5/9[/2025] o 05-09-2025
 DM_DE_MES_RE = re.compile(
@@ -224,7 +212,6 @@ def _first_date_in_text(texto: str) -> datetime.date | None:
     if m:
         d = int(m.group(1))
         mes_txt = m.group(0).lower()
-        # localizar el nombre del mes capturado
         mes_name = re.search(rf"{MESES_ES}", mes_txt).group(0)
         mo = MESES_MAP.get(mes_name, None)
         y = _year_or_current(m.group(2))
@@ -234,48 +221,10 @@ def _first_date_in_text(texto: str) -> datetime.date | None:
     m = DMY_SLASH_RE.search(t)
     if m:
         d = int(m.group(1)); mo = int(m.group(2)); y = _year_or_current(m.group(3))
-        # Evita confundir con hora (hh:mm) porque aquí el separador no es “:”
         if 1 <= d <= 31 and 1 <= mo <= 12:
             return datetime(y, mo, d, tzinfo=TZ).date()
 
     return None
-
-def fechas_desde_texto(texto: str) -> tuple[str, str]:
-    """
-    Retorna (apertura, cierre) en "YYYY-MM-DD HH:MM".
-    - Si hay día+mes (con o sin año) y horas, usa esa fecha.
-    - Si solo hay horas, usa fecha de hoy.
-    - Si no hay horas, retorna ("","") aunque haya fecha.
-    - Si hay dos o más horas, cierre = última; si la última < primera, suma 1 día.
-    """
-    horas = extraer_horas_any(texto)
-    if not horas:
-        return "", ""
-
-    base_date = _first_date_in_text(texto) or datetime.now(TZ).date()
-    a_str = f"{base_date} {horas[0]}"
-    if len(horas) > 1:
-        c_date = base_date
-        # si la última hora es “menor” a la primera, asumimos que cruza medianoche
-        h0 = datetime.strptime(horas[0], "%H:%M").time()
-        h1 = datetime.strptime(horas[-1], "%H:%M").time()
-        if (h1.hour, h1.minute) < (h0.hour, h0.minute):
-            c_date = base_date + timedelta(days=1)
-        c_str = f"{c_date} {horas[-1]}"
-    else:
-        c_str = ""
-    return a_str, c_str
-
-def hay_fecha_explicita(texto: str) -> bool:
-    """True solo si hay fecha con AÑO explícito."""
-    t = texto.lower()
-    if re.search(r"\b20\d{2}-\d{1,2}-\d{1,2}\b", t):  # 2025-08-10
-        return True
-    if re.search(r"\b\d{1,2}[/-]\d{1,2}/\d{4}\b", t):  # 10/08/2025 o 10-08-2025 (exige año)
-        return True
-    if re.search(rf"\b\d{{1,2}}\s+de\s+(?:{MESES_ES})\s+de\s+\d{{4}}\b", t):  # 10 de agosto de 2025
-        return True
-    return False
 
 AMPM_RE = re.compile(
     r"\b(?P<hour>1[0-2]|0?[1-9])(?::(?P<minute>[0-5]\d))?\s*(?P<ampm>a\.?m\.?|am|p\.?m\.?|pm)\b",
@@ -307,8 +256,33 @@ def extraer_horas_any(texto: str) -> list[str]:
             seen.add(x); out.append(x)
     return out
 
+def fechas_desde_texto(texto: str) -> tuple[str, str]:
+    """
+    Retorna (apertura, cierre) en "YYYY-MM-DD HH:MM".
+    - Si hay día+mes (con o sin año) y horas, usa esa fecha (año actual si falta).
+    - Si solo hay horas, usa fecha de hoy.
+    - Si no hay horas, retorna ("","").
+    - Si hay dos o más horas, cierre = última; si la última < primera, suma 1 día.
+    """
+    horas = extraer_horas_any(texto)
+    if not horas:
+        return "", ""
+
+    base_date = _first_date_in_text(texto) or datetime.now(TZ).date()
+    a_str = f"{base_date} {horas[0]}"
+    if len(horas) > 1:
+        c_date = base_date
+        h0 = datetime.strptime(horas[0], "%H:%M").time()
+        h1 = datetime.strptime(horas[-1], "%H:%M").time()
+        if (h1.hour, h1.minute) < (h0.hour, h0.minute):
+            c_date = base_date + timedelta(days=1)
+        c_str = f"{c_date} {horas[-1]}"
+    else:
+        c_str = ""
+    return a_str, c_str
+
 def calcula_tiempo_desde_texto(texto: str) -> str:
-    # Si hay al menos dos horas en el texto, calcula diferencia en el día actual (sin inventar fecha en columnas)
+    # Si hay al menos dos horas en el texto, calcula diferencia usando la fecha de hoy
     hh = extraer_horas_any(texto)
     if len(hh) < 2:
         return ""
@@ -436,7 +410,7 @@ def infer_area_coordinando(texto: str) -> str:
         return "DITC - Infraestructura"
     if "soporte" in t or "mesa de ayuda" in t:
         return "DSTC - Soporte Técnico"
-    if "sistemas" in t or "erp" in t or "base de datos" in t:
+    if "sistemas" in t o r "erp" in t or "base de datos" in t:
         return "DISC - Sistemas"
     return ""
 
@@ -532,21 +506,23 @@ if st.button("Reportar", use_container_width=True):
         cleaned = sanitize_text(response_text)
         # (opcional) assert_20_pipes(cleaned)   # solo si quieres el aviso
         fila, avisos = normalize_21_fields(cleaned)
-            # Autocompletar fechas: 
-        # - "5 de septiembre 15:00" -> usa año actual
-        # - "15:00" sin fecha -> usa hoy
+
+        # Limpiar tokens vacíos y normalizar "Evento/Incidente"
+        fila = clean_empty_tokens(fila)
+        fila[3] = norm_evento_incidente(fila[3])
+
+        # Autocompletar fechas desde el texto
+        # - "5 de septiembre 15:00" -> año actual si falta
+        # - "15:00" sin fecha -> hoy
         ap_auto, ci_auto = fechas_desde_texto(user_question)
         if not fila[1].strip() and ap_auto:
             fila[1] = ap_auto
         if not fila[14].strip() and ci_auto:
             fila[14] = ci_auto
 
-        
-        # --- NO autocompletar fechas desde horas (para cumplir la regla de no inventar fechas) ---
-        # Tiempo de solución: intentar por fechas (si existen)
+        # Tiempo de solución (por fechas si existen, si no por horas mencionadas)
         if not fila[15].strip():
             fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
-        # Si no se puede por fechas, calcular por horas mencionadas en el texto (no escribe fechas en columnas)
         if not fila[15].strip():
             fila[15] = calcula_tiempo_desde_texto(user_question)
 
@@ -576,9 +552,8 @@ if st.button("Reportar", use_container_width=True):
         # Campos obligatorios de Vulnerabilidad (18) y ID Amenaza (20) — si faltan, inferir por reglas
         texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
 
-        # 18 -> idx 17 (Vulnerabilidad): código
+        # 18 -> idx 17 (Vulnerabilidad)
         if not fila[17].strip():
-            # Reglas determinísticas de respaldo (Vulnerabilidad)
             _PAT_VULN = [
                 (r"(contraseñ|password|clave).*(d[eé]bil|compartid|reutiliz)", "4.1"),
                 (r"(sin mfa|sin 2fa|mfa deshabilitad|autenticaci[oó]n.*d[eé]bil)", "4.3"),
@@ -597,11 +572,10 @@ if st.button("Reportar", use_container_width=True):
                     fila[17] = code
                     break
             if not fila[17].strip():
-                # fallback genérico si el texto indica caída/indisponibilidad (riesgo de HA)
                 if re.search(r"(ca[ií]da|no disponible|indisponibilidad)", t):
                     fila[17] = "4.39"
 
-        # 20 -> idx 19 (ID Amenaza): código
+        # 20 -> idx 19 (ID Amenaza)
         if not fila[19].strip():
             _PAT_AMENAZA = [
                 (r"(phish|smish|vish|ingenier[íi]a social|suplantaci[oó]n)", "3.3"),
@@ -622,7 +596,6 @@ if st.button("Reportar", use_container_width=True):
                     fila[19] = code
                     break
             if not fila[19].strip():
-                # fallback por caída/indisponibilidad
                 if re.search(r"(ca[ií]da|no disponible|indisponibilidad|reinici(ar|o))", t):
                     fila[19] = "4.1"
 
