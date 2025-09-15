@@ -612,7 +612,6 @@ if st.button("Reportar", use_container_width=True):
         requeridos = [
             (fila[5], "Falta definir el **Sistema** afectado."),
             (fila[6], "Falta definir el **Área** que reportó el problema."),
-            (fila[13], "Falta definir el **Encargado**."),
         ]
         for valor, msg in requeridos:
             if not (valor or "").strip():
@@ -663,6 +662,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
