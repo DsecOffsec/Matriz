@@ -550,7 +550,7 @@ if st.button("Reportar", use_container_width=True):
             fila[15] = calcula_tiempo_desde_texto(user_question)
 
         # Completar / normalizar desde el texto (si faltan) — hacerlo ANTES de validar requeridos
-        fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question), ["Correo", "Jira", "Teléfono", "Monitoreo"]) or "Teléfono"
+        fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question), ["Correo", "Jira", "Teléfono", "Monitoreo", "Webex", "WhatsApp"]) or "Otro"
 
         if not fila[7].strip():
             fila[7] = detectar_ubicacion_ext(user_question) or "La Paz, Bolivia"
@@ -571,7 +571,7 @@ if st.button("Reportar", use_container_width=True):
             fila[13] = extraer_encargado(user_question)
 
         if not fila[5].strip():
-            fila[5] = infer_sistema(user_question)
+            fila[5] = infer_sistema(user_question) or "Palo Alto"
 
         if not fila[6].strip():
             fila[6] = infer_area(user_question)
@@ -628,6 +628,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
