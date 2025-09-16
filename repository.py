@@ -28,7 +28,7 @@ TZ = ZoneInfo("America/La_Paz")
 st.markdown("""
 ### 📝 Instrucciones para registrar un incidente
 
-Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos **obligatorios**:
+Por favorrrrrr, describe el incidente en **un solo párrafo** incluyendo estos campos **obligatorios**:
 
 1. **Fecha y hora de apertura** — La hora de inicio del incidente/alerta con hora y AM/PM.
 2. **Modo de reporte** - Si lo reportaron por correo, JIRA, monitoreo, llamada, otros, etc.
@@ -628,6 +628,7 @@ if st.button("Reportar", use_container_width=True):
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
