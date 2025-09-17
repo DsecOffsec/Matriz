@@ -587,91 +587,162 @@ if st.button("Reportar", use_container_width=True):
             fila[14] = ci_auto
 
         # 4) Realineo semántico mínimo (corrige campos corridos)
+                # 4) Realineo semántico reforzado (corrige campos corridos)
         CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
         IMPACTOS = {"alto","medio","bajo"}
-        def _looks_ciudad(s: str) -> bool: return any(c in (s or "").lower() for c in CIUDADES)
-        def _looks_impacto(s: str) -> bool: return (s or "").strip().lower() in IMPACTOS
+        ESTADOS  = {"cerrado","en investigación","en investigacion"}
+        MODO_OPC = ["Correo","Jira","Teléfono","Monitoreo","Webex","WhatsApp"]
+        SISTEMAS_KEYWORDS = ["firewall","kubernetes","cortex","checkpoint","proxy","waf","antivirus","umbrella","ise","vpn","exchange","servidor","server","correo","email","outlook"]
 
-        # Si en Sistema hay ciudad → mover a Ubicación
-        if _looks_ciudad(fila[5]) and not _looks_ciudad(fila[7]):
-            fila[7], fila[5] = fila[5], ""
+        def _looks_ciudad(s: str) -> bool:
+            return any(c in (s or "").lower() for c in CIUDADES)
+        def _looks_impacto(s: str) -> bool:
+            return (s or "").strip().lower() in IMPACTOS
+        def _looks_estado(s: str) -> bool:
+            return (s or "").strip().lower() in ESTADOS
+        def _looks_evento_incidente(s: str) -> bool:
+            return (s or "").strip().lower() in {"evento","incidente"}
+        def _looks_sistema(s: str) -> bool:
+            t = (s or "").strip().lower()
+            return any(k in t for k in SISTEMAS_KEYWORDS)
+        def _norm_modo(s: str) -> str:
+            return norm_opcion(s, MODO_OPC)
 
-        # Si en Área hay impacto → mover a Impacto
-        if _looks_impacto(fila[6]) and not _looks_impacto(fila[8]):
-            fila[8], fila[6] = fila[6].title(), ""
+        def _put(idx: int, val: str) -> bool:
+            """Escribe en idx solo si está vacío."""
+            if not (fila[idx] or "").strip() and (val or "").strip():
+                fila[idx] = val
+                return True
+            return False
 
-        # Si Ubicación está vacía pero otro campo trae ciudad → moverla
+        # Limpieza básica
+        fila = [(x or "").strip() for x in fila]
+
+        # A) Impacto mal ubicado (a veces cae en Sistema/Área/Ubicación/Clasificación…)
+        for i in range(21):
+            if i == 8: 
+                continue
+            if _looks_impacto(fila[i]):
+                _put(8, fila[i].title())
+                if i != 8:
+                    fila[i] = ""
+
+        # B) Estado mal ubicado
+        for i in range(21):
+            if i == 16: 
+                continue
+            if _looks_estado(fila[i]):
+                _put(16, fila[i].capitalize())
+                if i != 16:
+                    fila[i] = ""
+
+        # C) Evento/Incidente mal ubicado
+        for i in range(21):
+            if i == 3: 
+                continue
+            if _looks_evento_incidente(fila[i]):
+                _put(3, fila[i].title())
+                if i != 3:
+                    fila[i] = ""
+
+        # D) Modo de reporte en otro campo
+        for i in range(21):
+            if i == 2: 
+                continue
+            mm = _norm_modo(fila[i])
+            if mm:
+                _put(2, mm)
+                if i != 2:
+                    fila[i] = ""
+
+        # E) Área GTIC (DSEC/DITC/DSTC/DISC) detectada en otro lado
+        for i in range(21):
+            if i == 12: 
+                continue
+            t = (fila[i] or "").lower()
+            if any(k in t for k in ["dsec","ditc","dstc","disc"]):
+                _put(12, fila[i])
+                if i != 12:
+                    fila[i] = ""
+
+        # F) Encargado: del texto libre o si cayó en otra columna
+        if not fila[13].strip():
+            enc = extraer_encargado(user_question)
+            if enc:
+                fila[13] = enc
+        # Si nombres cortos quedaron en otras columnas, muévelos
+        for i in (5,6,7,9,10,11,12):
+            t = (fila[i] or "").strip()
+            if re.fullmatch(r"[A-Za-zÁÉÍÓÚÜáéíóúñÑ]+(?:\s+[A-Za-zÁÉÍÓÚÜáéíóúñÑ]+)?", t) and len(t.split()) <= 2:
+                if t and t[0].isalpha() and t[0].isupper():
+                    if _put(13, t): 
+                        fila[i] = ""
+
+        # G) “AGETIC” → Área (si está en otra columna)
+        for i in range(21):
+            if "agetic" in (fila[i] or "").lower():
+                _put(6, "AGETIC")
+                if i != 6:
+                    fila[i] = ""
+
+        # H) Sistema mal ubicado / inferencia por texto
+        if not fila[5].strip():
+            sis = infer_sistema(user_question)
+            if sis:
+                fila[5] = sis
+        for i in range(21):
+            if i == 5: 
+                continue
+            if _looks_sistema(fila[i]):
+                if _put(5, fila[i]):
+                    fila[i] = ""
+
+        # I) Ubicación: si hay ciudad en otras columnas, muévela; si vacía, infiere del texto
         if not fila[7].strip():
-            for i, val in enumerate(fila):
-                if i not in (5,7) and _looks_ciudad(val):
-                    fila[7], fila[i] = val, ""
+            for i in range(21):
+                if i == 7: 
+                    continue
+                if _looks_ciudad(fila[i]):
+                    fila[7] = fila[i]
+                    if i != 7:
+                        fila[i] = ""
                     break
-
-        # 5) Tiempo de solución
-        if not fila[15].strip():
-            fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
-        if not fila[15].strip():
-            fila[15] = calcula_tiempo_desde_texto(user_question)
-
-        # 6) Inferencias y normalizaciones
-        # Modo Reporte
-        fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question),
-                              ["Correo","Jira","Teléfono","Monitoreo","Webex","WhatsApp"]) or "Otro"
-
-        # Ubicación (si quedó vacía)
         if not fila[7].strip():
-            fila[7] = detectar_ubicacion_ext(user_question) or "La Paz, Bolivia"
+            fila[7] = detectar_ubicacion_ext(user_question) or ""
 
-        # Acción inmediata y Solución
+        # J) Acción inmediata / Solución mal ubicadas (verbos típicos en otras columnas)
         if not fila[10].strip():
             fila[10] = infer_accion_inmediata(user_question)
         if not fila[11].strip():
             fila[11] = infer_solucion(user_question)
 
-        # Clasificación
+        for i in (5,6,7,9):
+            t = (fila[i] or "").lower()
+            if re.search(r"\b(reinici|bloque|verific|restablec|permit|desbloque|allow|whitelist)\b", t):
+                # Si no hay solución → va a Solución; si hay → a Acción inmediata
+                if not fila[11].strip():
+                    fila[11] = fila[i]
+                elif not fila[10].strip():
+                    fila[10] = fila[i]
+                fila[i] = ""
+
+        # K) Clasificación final (catálogo + inferencia)
         fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
 
-        # Área de GTIC / Encargado
-        if not fila[12].strip():
-            fila[12] = infer_area_coordinando(user_question)
-        if not fila[13].strip():
-            fila[13] = extraer_encargado(user_question)
+        # L) Corrección de valores imposibles en Sistema/Área/Ubicación
+        #    (p.ej. Impacto o Estado que se nos haya escapado)
+        if _looks_impacto(fila[5]): 
+            _put(8, fila[5].title()); fila[5] = infer_sistema(user_question) or fila[5]
+        if _looks_estado(fila[5]): 
+            _put(16, fila[5].capitalize()); fila[5] = infer_sistema(user_question) or ""
+        if _looks_impacto(fila[6]): 
+            _put(8, fila[6].title()); fila[6] = ""
+        if _looks_estado(fila[6]): 
+            _put(16, fila[6].capitalize()); fila[6] = ""
+        if not _looks_ciudad(fila[7]) and _looks_sistema(fila[7]):
+            _put(5, fila[7]); fila[7] = detectar_ubicacion_ext(user_question) or ""
 
-        # Sistema / Área
-        if not fila[5].strip():
-            fila[5] = infer_sistema(user_question) or "Firewall"
-        if not fila[6].strip():
-            fila[6] = infer_area(user_question)
 
-        # Estado por defecto
-        if not fila[16].strip():
-            fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
-
-        # 7) Validaciones finales
-        if len(fila) != 21:
-            st.error(f"La salida quedó con {len(fila)} columnas (esperado: 21).")
-            st.code(cleaned, language="text")
-            st.stop()
-
-        # 8) Código + timestamp
-        codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
-        fila[0] = codigo
-        registro_ts = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
-        fila_con_ts = fila + [registro_ts]
-
-        # 9) Vista previa
-        df_prev = pd.DataFrame([fila_con_ts], columns=COLUMNAS + ["Hora de reporte"])
-        st.subheader("Vista previa")
-        st.dataframe(df_prev, use_container_width=True)
-        if avisos:
-            st.info(" | ".join(avisos))
-
-        # 10) Guardar
-        try:
-            ws.append_row(fila_con_ts, value_input_option="USER_ENTERED")
-            st.success(f"Incidente registrado correctamente: {codigo}")
-        except Exception as e:
-            st.error(f"No se pudo escribir en la hoja: {e}")
 
 
 
