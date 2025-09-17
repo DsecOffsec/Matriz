@@ -173,18 +173,6 @@ def _parse_dt_try(s):
     except Exception:
         return None
 
-if not fila[14].strip() and fila[15].strip() and ap_dt:
-    m = re.search(r"(\d+)\s*horas?\s*(\d+)\s*min", fila[15], flags=re.I)
-    if not m:
-        m = re.search(r"(\d+)\s*min", fila[15], flags=re.I)
-        if m:
-            delta = timedelta(minutes=int(m.group(1)))
-            fila[14] = (ap_dt + delta).strftime("%Y-%m-%d %H:%M")
-    else:
-        horas, mins = int(m.group(1)), int(m.group(2))
-        delta = timedelta(hours=horas, minutes=mins)
-        fila[14] = (ap_dt + delta).strftime("%Y-%m-%d %H:%M")
-
 # 2) Realineo semántico (detectar “valores típicos” fuera de lugar y moverlos)
 IMPACTOS = {"alto","medio","bajo"}
 ESTADOS  = {"cerrado","en investigación","en investigacion"}
@@ -806,6 +794,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
