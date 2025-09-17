@@ -2,11 +2,9 @@ import streamlit as st
 import gspread
 import pandas as pd
 import re
-from typing import Optional
+from typing import Optional, List, Tuple
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-import google.generativeai as genai
-from typing import List, Tuple
 
 st.title("MATRIZ DE REPORTES DSEC")
 
@@ -14,146 +12,30 @@ st.title("MATRIZ DE REPORTES DSEC")
 # Conexiones y configuración
 # ---------------------------
 gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
-# Recomendado: mover a secrets -> st.secrets["connections"]["SHEET_ID"]
 SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"
 sh = gc.open_by_key(SHEET_ID)
 ws = sh.worksheet("Reportes")
-
-api_key = st.secrets["GOOGLE_API_KEY"]
-genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-1.5-flash")
 
 TZ = ZoneInfo("America/La_Paz")
 
 st.markdown("""
 ### 📝 Instrucciones para registrar un incidente
 
-Por favorrrrrr, describe el incidente en **un solo párrafo** incluyendo estos campos **obligatorios**:
+Por favor, describe el incidente en **un solo párrafo** incluyendo:
 
-1. **Fecha y hora de apertura** — La hora de inicio del incidente/alerta con hora y AM/PM.
-2. **Modo de reporte** - Si lo reportaron por correo, JIRA, monitoreo, llamada, otros, etc.
-3. **Sistema afectado** — Por ejemplo: Correo, VPN, Antivirus, Firewall, etc.  
-4. **Área afectada** — El departamento o unidad donde se detectó el problema.  
-5. **Acción inmediata tomada** — Lo que hizo el usuario para mitigar el problema.  
-6. **Solución aplicada** — Acción final que resolvió el incidente.  
-7. **Área de GTIC que coordinó** — DSEC - Seguridad, DITC - Infraestructura, DSTC - Soporte Técnico, DISC - Sistemas.  
-8. **Encargado** - El responsable del incidente/alerta.
+- Fecha y hora de apertura (si solo hay horas, ponlas igual).
+- Modo de reporte (Correo, Jira, Monitoreo, Teléfono, Webex, WhatsApp…).
+- Sistema afectado (Correo, VPN, AD, Firewall, ERP, etc).
+- Área afectada.
+- Acción inmediata.
+- Solución aplicada.
+- Área de GTIC que coordinó (DSEC/DSTC/DITC/DISC).
+- Encargado.
 """)
 
 # ---------------------------
-# Guías (texto de referencia)
+# Utilidades
 # ---------------------------
-
-CODE_RE = re.compile(r'^\d+\.\d+$')
-
-# ---------------------------
-# Clasificaciones válidas (lista cerrada)
-# ---------------------------
-CLASIF_CANON = {
-    "acceso no autorizado": "Acceso no autorizado",
-    "modificación de recursos no autorizado": "Modificación de recursos no autorizado",
-    "uso inapropiado de recursos": "Uso inapropiado de recursos",
-    "no disponibilidad de recursos": "No disponibilidad de recursos",
-    "multicomponente": "Multicomponente",
-    "exploración de vulnerabilidades": "Exploración de Vulnerabilidades",
-    "otros": "Otros",
-}
-CLASIF_TEXTO = "\n".join([f"- {v}" for v in CLASIF_CANON.values()])
-
-# ---------------------------
-# Prompt (CODIGO lo genera backend y no se inventan fechas)
-# ---------------------------
-persona = f"""
-Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
-
-Reglas:
-- Usa el ORDEN EXACTO de las 21 columnas de abajo.
-- Si un campo llevaría |, reemplázalo por /.
-- Zona horaria: America/La_Paz. En el año 2025
-- NO inventes ni completes los campos 18 (Vulnerabilidad), 19 (Causa), 20 (ID Amenaza) y 21 (Amenaza).
-  Déjalos vacíos siempre.
-- NO inventes fechas: si el reporte no incluye una fecha explícita con día/mes/año (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacíos los campos de fecha. Si solo hay horas, no pongas fecha.
-
-Columnas y formato:
-1. CODIGO → (dejar vacío; lo genera el sistema).
-2. Fecha y Hora de Apertura → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
-3. Modo Reporte → valores válidos (Correo, Jira, Teléfono, Monitoreo, …).
-4. Evento/ Incidente → Evento | Incidente.
-5. Descripción Evento/ Incidente → resumen claro y profesional.
-6. Sistema → (VPN, Correo, Active Directory, …).
-7. Area
-8. Ubicación
-9. Impacto → Alto | Medio | Bajo.
-10. Clasificación → elige exactamente UNO de: 
-{CLASIF_TEXTO}
-11. Acción Inmediata
-12. Solución
-13. Area de GTIC - Coordinando → (DSEC - Seguridad, DITC - Infraestructura, DSTC - Soporte Técnico, DISC - Sistemas, …).
-14. Encargado SI → solo si se menciona; no inventes nombres.
-15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
-16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
-17. Estado → Cerrado | En investigación.
-18. Vulnerabilidad → Vacio
-19. Causa → vacío.
-20. ID Amenaza → Vacio
-21. Amenaza → vacío.
-
-[REPORTE DE ENTRADA]:
-"""
-
-# ---------------------------
-# Utilidades de saneamiento / validación
-# ---------------------------
-def sanitize_text(s: str) -> str:
-    s = s.strip()
-    s = re.sub(r"^```.*?\n", "", s, flags=re.DOTALL)
-    s = re.sub(r"```$", "", s)
-    s = s.replace("```", "")
-    s = s.replace("\n", " ").replace("\r", " ")
-    s = s.replace("“", '"').replace("”", '"').replace("’", "'")
-    m = re.search(r"[^|\n]*\|[^|\n]*\|", s)
-    if m:
-        s = s[m.start():]
-    return s.strip().strip('"').strip()
-
-def assert_20_pipes(s: str):
-    # Aviso en vez de abortar; dejamos que normalize_21_fields repare
-    if s.count("|") != 20:
-        st.info(f"Aviso: el modelo devolvió {s.count('|')} pipes. Intentaré normalizar a 21 columnas.")
-
-def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
-    avisos = []
-    parts = [p.strip() for p in raw.split("|")]
-    original_count = len(parts)
-    if original_count > 21:
-        # Fusiona el excedente en 'Descripción' (columna 5)
-        keep_tail = 16  # columnas 6..21
-        left_end = max(4, original_count - keep_tail)
-        desc = " | ".join(parts[4:left_end])
-        parts = parts[:4] + [desc] + parts[left_end:]
-        avisos.append(f"Se detectaron {original_count} campos; se fusionó el excedente en 'Descripción'.")
-    if len(parts) < 21:
-        faltan = 21 - len(parts)
-        avisos.append(f"Se detectaron {len(parts)} campos; se completaron {faltan} vacíos.")
-        parts += [""] * faltan
-    parts = [p.strip() for p in parts]
-    return parts, avisos
-
-def is_empty_token(x: str) -> bool:
-    # Por ahora, solo vacío literal (""), como pediste
-    return x.strip().lower() in {""}
-
-def clean_empty_tokens(parts: list[str]) -> list[str]:
-    return [("" if is_empty_token(p) else p) for p in parts]
-
-def norm_evento_incidente(v: str) -> str:
-    v2 = (v or "").strip().lower()
-    if "inciden" in v2:
-        return "Incidente"
-    if "evento" in v2:
-        return "Evento"
-    return "Incidente"
-
 def parse_dt(s: str):
     s = s.strip()
     try:
@@ -172,7 +54,7 @@ def calcula_tiempo_solucion(apertura: str, cierre: str) -> str:
     return ""
 
 # ---------------------------
-# Fechas/horas del texto (am/pm y 24h)
+# Fechas/horas del texto
 # ---------------------------
 MESES_ES = r"enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre"
 MESES_MAP = {
@@ -180,19 +62,24 @@ MESES_MAP = {
     "julio": 7, "agosto": 8, "septiembre": 9, "setiembre": 9,
     "octubre": 10, "noviembre": 11, "diciembre": 12,
 }
-ISO_FECHA_RE = re.compile(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b")              # 2025-09-05
-DMY_SLASH_RE = re.compile(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b")   # 5/9[/2025] o 05-09-2025
+ISO_FECHA_RE = re.compile(r"\b(20\d{2})-(\d{1,2})-(\d{1,2})\b")
+DMY_SLASH_RE = re.compile(r"\b(\d{1,2})[/-](\d{1,2})(?:[/-](\d{2,4}))?\b")
 DM_DE_MES_RE = re.compile(
     rf"\b(\d{{1,2}})\s+de\s+(?:{MESES_ES})(?:\s+de\s+(\d{{4}}))?\b", re.IGNORECASE
 )
+AMPM_RE = re.compile(
+    r"\b(?P<hour>1[0-2]|0?[1-9])(?::(?P<minute>[0-5]\d))?\s*(?P<ampm>a\.?m\.?|am|p\.?m\.?|pm)\b",
+    re.IGNORECASE
+)
+H24_RE = re.compile(r"\b(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)\b")
 
-def _safe_int(x: str) -> int | None:
+def _safe_int(x: str) -> Optional[int]:
     try:
         return int(x)
     except Exception:
         return None
 
-def _year_or_current(y: str | None) -> int:
+def _year_or_current(y: Optional[str]) -> int:
     if not y:
         return datetime.now(TZ).year
     yi = _safe_int(y)
@@ -228,12 +115,6 @@ def _first_date_in_text(texto: str) -> Optional[datetime.date]:
 
     return None
 
-AMPM_RE = re.compile(
-    r"\b(?P<hour>1[0-2]|0?[1-9])(?::(?P<minute>[0-5]\d))?\s*(?P<ampm>a\.?m\.?|am|p\.?m\.?|pm)\b",
-    re.IGNORECASE
-)
-H24_RE = re.compile(r"\b(?P<hour>[01]?\d|2[0-3]):(?P<minute>[0-5]\d)\b")
-
 def _to_24h(hour: int, minute: int, ampm: str) -> tuple[int, int]:
     ampm = ampm.lower().replace(".", "")
     if ampm.startswith("p") and hour != 12:
@@ -259,17 +140,9 @@ def extraer_horas_any(texto: str) -> list[str]:
     return out
 
 def fechas_desde_texto(texto: str) -> tuple[str, str]:
-    """
-    Retorna (apertura, cierre) en "YYYY-MM-DD HH:MM".
-    - Si hay día+mes (con o sin año) y horas, usa esa fecha (año actual si falta).
-    - Si solo hay horas, usa fecha de hoy.
-    - Si no hay horas, retorna ("","").
-    - Si hay dos o más horas, cierre = última; si la última < primera, suma 1 día.
-    """
     horas = extraer_horas_any(texto)
     if not horas:
         return "", ""
-
     base_date = _first_date_in_text(texto) or datetime.now(TZ).date()
     a_str = f"{base_date} {horas[0]}"
     if len(horas) > 1:
@@ -283,24 +156,8 @@ def fechas_desde_texto(texto: str) -> tuple[str, str]:
         c_str = ""
     return a_str, c_str
 
-def calcula_tiempo_desde_texto(texto: str) -> str:
-    # Si hay al menos dos horas en el texto, calcula diferencia usando la fecha de hoy
-    hh = extraer_horas_any(texto)
-    if len(hh) < 2:
-        return ""
-    h_ini, h_fin = hh[0], hh[-1]
-    today = datetime.now(TZ).date()
-    a = datetime.strptime(f"{today} {h_ini}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
-    c = datetime.strptime(f"{today} {h_fin}", "%Y-%m-%d %H:%M").replace(tzinfo=TZ)
-    if c < a:
-        c = c + timedelta(days=1)
-    delta = c - a
-    horas = delta.seconds // 3600 + delta.days * 24
-    minutos = (delta.seconds % 3600) // 60
-    return f"{horas} horas {minutos} minutos"
-
 # ---------------------------
-# Inferencia de Ubicación / Modo / Acción / Solución / Clasificación / Área GTIC / Sistema / Área
+# Inferencias semánticas
 # ---------------------------
 DEPTS_BO = {
     "la paz": ["la paz", "lpz", "senkata"],
@@ -313,6 +170,7 @@ DEPTS_BO = {
     "pando": ["pando", "cobija"],
     "tarija": ["tarija", "yacuiba", "villa montes"],
 }
+
 def detectar_ubicacion_ext(texto: str) -> str:
     t = texto.lower()
     if "a nivel nacional" in t or "nivel nacional" in t:
@@ -334,22 +192,10 @@ def detectar_modo_reporte(texto: str) -> str:
         return "Monitoreo"
     if any(x in t for x in ["teléfono", "telefono", "llam", "llamada", "celular", "whatsapp"]):
         return "Teléfono"
+    if "webex" in t:
+        return "Webex"
     if any(x in t for x in ["correo", "e-mail", "email", "mail", "outlook"]):
         return "Correo"
-    return "Teléfono"
-
-def extraer_encargado(texto: str) -> str:
-    """
-    Busca frases como 'el encargado es <NOMBRE>' o 'responsable <NOMBRE>'.
-    Devuelve el nombre si lo encuentra.
-    """
-    t = texto.lower()
-    m = re.search(r"(encargad[oa]|responsable)\s+(es\s+)?([a-záéíóúñ\s]+)", texto, re.IGNORECASE)
-    if m:
-        nombre = m.group(3).strip()
-        # Cortar si hay 'del área' o frases largas
-        nombre = re.split(r"\s+(del|de la|de los|de las)\b", nombre, 1)[0].strip()
-        return nombre.title()
     return ""
 
 ACCION_RULES = [
@@ -364,19 +210,33 @@ SOLUCION_RULES = [
     (r"(regla|permit|bloque).*(firewall|fw|ips|waf)", "Ajuste de reglas en firewall/WAF"),
     (r"(whitelist|allowlist|excepci[oó]n)", "Creación de excepción/allowlist"),
     (r"(reconfiguraci[oó]n|ajuste).*(pol[ií]tica|configuraci[oó]n)", "Reconfiguración de políticas"),
+    (r"bloque(o|ar).*(dominio|domain)", "Bloqueo de dominio"),
+    (r"an[aá]lisis.*(url|enlace|link)", "Análisis de URLs"),
 ]
+
 def _collect(vals: set[str], rules: list[tuple[str,str]], texto: str):
     t = texto.lower()
     for pat, label in rules:
         if re.search(pat, t):
             vals.add(label)
+
 def infer_accion_inmediata(texto: str) -> str:
     s: set[str] = set(); _collect(s, ACCION_RULES, texto)
     return "; ".join(sorted(s)) if s else ""
+
 def infer_solucion(texto: str) -> str:
     s: set[str] = set(); _collect(s, SOLUCION_RULES, texto)
     return "; ".join(sorted(s)) if s else ""
 
+CLASIF_CANON = {
+    "acceso no autorizado": "Acceso no autorizado",
+    "modificación de recursos no autorizado": "Modificación de recursos no autorizado",
+    "uso inapropiado de recursos": "Uso inapropiado de recursos",
+    "no disponibilidad de recursos": "No disponibilidad de recursos",
+    "multicomponente": "Multicomponente",
+    "exploración de vulnerabilidades": "Exploración de Vulnerabilidades",
+    "otros": "Otros",
+}
 CLASIF_PATTERNS = {
     "Acceso no autorizado": [
         r"acceso no autoriz", r"intrus", r"suplantaci[oó]n",
@@ -397,10 +257,8 @@ CLASIF_PATTERNS = {
         r"escane[oó]|scan|nmap|nessus|openvas|enumeraci[oó]n|port scan|sondeo de puertos",
     ],
 }
-def infer_clasificacion(texto: str, clasif_modelo: str = "") -> str:
-    cm = clasif_modelo.strip().lower()
-    if cm in CLASIF_CANON:
-        return CLASIF_CANON[cm]
+
+def infer_clasificacion(texto: str) -> str:
     hits = []
     t = texto.lower()
     for nombre, pats in CLASIF_PATTERNS.items():
@@ -408,15 +266,7 @@ def infer_clasificacion(texto: str, clasif_modelo: str = "") -> str:
             hits.append(nombre)
     if len(hits) >= 2: return "Multicomponente"
     if len(hits) == 1: return hits[0]
-    return ""
-
-def normaliza_clasificacion_final(valor: str) -> str:
-    v = valor.strip().lower()
-    if not v: return ""
-    for k, canon in CLASIF_CANON.items():
-        if k in v:
-            return canon
-    return ""
+    return "Otros"
 
 def infer_area_coordinando(texto: str) -> str:
     t = texto.lower()
@@ -429,7 +279,6 @@ def infer_area_coordinando(texto: str) -> str:
     if "sistemas" in t or "erp" in t or "base de datos" in t:
         return "DISC - Sistemas"
     return ""
-
 
 def infer_sistema(texto: str) -> str:
     t = texto.lower()
@@ -450,17 +299,42 @@ def infer_area(texto: str) -> str:
         return m.group(2).strip().title()
     return ""
 
-def norm_opcion(valor: str, validos: list[str]) -> str:
-    v = (valor or "").strip().lower()
-    for x in validos:
-        if v == x.lower():
-            return x
+def norm_evento_incidente(texto: str) -> str:
+    t = texto.lower()
+    if "evento" in t: return "Evento"
+    return "Incidente"
+
+# Encargado
+PERSON_RE = re.compile(r'^[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,3}$')
+def extraer_encargado(texto: str) -> str:
+    m = re.search(r"(encargad[oa]|responsable)\s+(?:es\s+)?([a-záéíóúñ\s]+)", texto, re.IGNORECASE)
+    if m:
+        nombre = m.group(2).strip()
+        nombre = re.split(r"\s+(del|de la|de los|de las)\b", nombre, 1, flags=re.IGNORECASE)[0].strip()
+        if nombre and len(nombre.split()) <= 4:
+            return " ".join(w.capitalize() for w in nombre.split())
+    # fallback: si aparece un Nombre Apellido y no está en solución
+    posibles = re.findall(r"\b([A-ZÁÉÍÓÚÑ][a-záéíóúñ]+(?:\s+[A-ZÁÉÍÓÚÑ][a-záéíóúñ]+){1,2})\b", texto)
+    for p in posibles:
+        if 2 <= len(p.split()) <= 3:
+            return p
     return ""
+
+def limpiar_solucion_si_es_nombre(sol: str, encargado: str) -> str:
+    s = (sol or "").strip()
+    e = (encargado or "").strip()
+    if not s:
+        return s
+    if PERSON_RE.match(s):  # parece nombre propio
+        return ""
+    if e and (s.lower() == e.lower() or s.lower() in e.lower() or e.lower() in s.lower()):
+        return ""
+    return s
 
 # ---------------------------
 # Generador de CODIGO: INC-<día>-<mes>-<NNN>
 # ---------------------------
-def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
+def generar_codigo_inc(ws, fecha_apertura: Optional[str]) -> str:
     dia, mes = None, None
     if fecha_apertura:
         try:
@@ -472,7 +346,7 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
         now = datetime.now(TZ)
         dia, mes = now.day, now.month
 
-    codigos = ws.col_values(1)  # CODIGO
+    codigos = ws.col_values(1)
     patron = re.compile(rf"^INC-{dia}-{mes}-(\d{{3}})$")
     max_seq = 0
     for c in codigos:
@@ -496,7 +370,7 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
 user_question = st.text_area(
     "Describe el incidente:",
     height=200,
-    placeholder="Ej: A las 8:00am el área de Contabilidad reporta por Correo que no puede acceder al sistema de Correo corporativo. Como acción inmediata, el usuario reinició el equipo y Mesa de Ayuda validó conectividad sin resultados. Seguridad Informática coordinó la atención y reinició el servicio de Correo en el servidor, verificando autenticación y entrega de mensajes. A las 10:15am el servicio quedó restablecido y se cerró el incidente.",
+    placeholder="Ej: El viernes 5 de septiembre a las 15:00, ...",
     help="Incluye: Fecha/hora de apertura, Sistema, Área, Acción inmediata, Solución, Área GTIC que coordinó y Fecha/hora de cierre."
 )
 
@@ -505,107 +379,117 @@ if st.button("Reportar", use_container_width=True):
         st.warning("Por favor, describe el incidente antes de continuar.")
         st.stop()
 
-    prompt = persona + user_question.strip()
+    with st.spinner("Extrayendo campos..."):
 
-    with st.spinner("Generando y validando la fila..."):
-        last_err, response_text = None, None
-        for _ in range(2):
-            try:
-                response = model.generate_content([prompt], generation_config={"temperature": 0.2})
-                response_text = response.text if hasattr(response, "text") else str(response)
-                break
-            except Exception as e:
-                last_err = e
-        if response_text is None:
-            st.error(f"Error al generar contenido: {last_err}")
+        # 1) Columnas por significado (nada de re-alinear)
+        # 1. CODIGO (vacío por ahora)
+        col1 = ""
+
+        # 2 & 15 Fechas
+        apertura, cierre = fechas_desde_texto(user_question)
+
+        # 3 Modo
+        modo = detectar_modo_reporte(user_question)
+
+        # 4 Evento/Incidente
+        ev_inc = norm_evento_incidente(user_question)
+
+        # 5 Descripción (usa el texto; podrías resumir si quieres)
+        desc = user_question.strip()
+
+        # 6 Sistema
+        sistema = infer_sistema(user_question)
+
+        # 7 Área
+        area = infer_area(user_question)
+
+        # 8 Ubicación
+        ubic = detectar_ubicacion_ext(user_question)
+
+        # 9 Impacto (simple heurística)
+        t = user_question.lower()
+        if "crític" in t or "critico" in t or "alto" in t:
+            impacto = "Alto"
+        elif "medio" in t:
+            impacto = "Medio"
+        elif "bajo" in t:
+            impacto = "Bajo"
+        else:
+            impacto = ""
+
+        # 10 Clasificación
+        clasif = infer_clasificacion(user_question)
+
+        # 11 Acción inmediata
+        accion = infer_accion_inmediata(user_question)
+
+        # 12 Solución (y limpiar si es nombre)
+        solucion = infer_solucion(user_question)
+        encargado_tmp = extraer_encargado(user_question)
+        solucion = limpiar_solucion_si_es_nombre(solucion, encargado_tmp)
+        if not solucion:
+            # si quedó vacío, intenta inferir de nuevo con más generosidad (opcional)
+            solucion = infer_solucion(user_question)
+
+        # 13 Área de GTIC coordinando
+        area_gtic = infer_area_coordinando(user_question)
+
+        # 14 Encargado
+        encargado = encargado_tmp
+
+        # 16 Tiempo de solución
+        tiempo_sol = calcula_tiempo_solucion(apertura, cierre)
+        if not tiempo_sol and apertura and not cierre:
+            # Si no hay cierre, al menos no inventes tiempo
+            tiempo_sol = ""
+
+        # 17 Estado
+        estado = "Cerrado" if cierre else "En investigación"
+
+        # 18-21 SIEMPRE VACÍOS (por tu requerimiento)
+        vulnerabilidad = ""
+        causa = ""
+        id_amenaza = ""
+        amenaza = ""
+
+        # Validaciones mínimas que quieras exigir
+        if not sistema:
+            st.error("Falta definir el **Sistema** afectado.")
             st.stop()
 
-        cleaned = sanitize_text(response_text)
-        # (opcional) assert_20_pipes(cleaned)   # solo si quieres el aviso
-        fila, avisos = normalize_21_fields(cleaned)
+        # 1) Generar CODIGO
+        codigo = generar_codigo_inc(ws, apertura)
+        col1 = codigo
 
-        # Limpiar tokens vacíos y normalizar "Evento/Incidente"
-        fila = clean_empty_tokens(fila)
-        fila[3] = norm_evento_incidente(fila[3])
-
-                # Forzar a vacío los campos 18-21
-        fila[17] = ""  # Vulnerabilidad
-        fila[18] = ""  # Causa
-        fila[19] = ""  # ID Amenaza
-        fila[20] = ""  # Amenaza
-
-        # Autocompletar fechas desde el texto
-        # - "5 de septiembre 15:00" -> año actual si falta
-        # - "15:00" sin fecha -> hoy
-        ap_auto, ci_auto = fechas_desde_texto(user_question)
-        if not fila[1].strip() and ap_auto:
-            fila[1] = ap_auto
-        if not fila[14].strip() and ci_auto:
-            fila[14] = ci_auto
-
-        # Tiempo de solución (por fechas si existen, si no por horas mencionadas)
-        if not fila[15].strip():
-            fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
-        if not fila[15].strip():
-            fila[15] = calcula_tiempo_desde_texto(user_question)
-
-        # Completar / normalizar desde el texto (si faltan) — hacerlo ANTES de validar requeridos
-        fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question), ["Correo", "Jira", "Teléfono", "Monitoreo", "Webex", "WhatsApp"]) or "Otro"
-
-        if not fila[7].strip():
-            fila[7] = detectar_ubicacion_ext(user_question) or "La Paz, Bolivia"
-
-        if not fila[10].strip():
-            fila[10] = infer_accion_inmediata(user_question)
-
-        if not fila[11].strip():
-            fila[11] = infer_solucion(user_question)
-
-        fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
-
-        if not fila[12].strip():
-            fila[12] = infer_area_coordinando(user_question)
-
-        # Extraer encargado si se menciona explícitamente
-        if not fila[13].strip():
-            fila[13] = extraer_encargado(user_question)
-
-        if not fila[5].strip():
-            fila[5] = infer_sistema(user_question) or "Palo Alto"
-
-        if not fila[6].strip():
-            fila[6] = infer_area(user_question)
-
-        # Campos obligatorios de Vulnerabilidad (18) y ID Amenaza (20) — si faltan, inferir por reglas
-        texto_ctx = " ".join([user_question, fila[4], fila[11], fila[12], fila[6], fila[10]])
-
-        # Validaciones finales (después de inferencias)
-        requeridos = [
-            (fila[5], "Falta definir el **Sistema** afectado."),
-            #(fila[6], "Falta definir el **Área** que reportó el problema."),
+        # 2) Armar fila en el ORDEN exacto
+        fila = [
+            col1,                # 1 CODIGO
+            apertura,            # 2 Fecha y Hora de Apertura
+            modo,                # 3 Modo Reporte
+            ev_inc,              # 4 Evento/Incidente
+            desc,                # 5 Descripción
+            sistema,             # 6 Sistema
+            area,                # 7 Area
+            ubic,                # 8 Ubicación
+            impacto,             # 9 Impacto
+            clasif,              # 10 Clasificación
+            accion,              # 11 Acción Inmediata
+            solucion,            # 12 Solución
+            area_gtic,           # 13 Area de GTIC - Coordinando
+            encargado,           # 14 Encargado SI
+            cierre,              # 15 Fecha y Hora de Cierre
+            tiempo_sol,          # 16 Tiempo Solución
+            estado,              # 17 Estado
+            vulnerabilidad,      # 18 Vulnerabilidad
+            causa,               # 19 Causa
+            id_amenaza,          # 20 ID Amenaza
+            amenaza,             # 21 Amenaza
         ]
-        for valor, msg in requeridos:
-            if not (valor or "").strip():
-                st.error(msg); st.stop()
-        # Estado por defecto si falta
-        if not fila[16].strip():
-            fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
 
-        # Generar CODIGO backend (col 1) según Fecha Apertura (col 2) o fecha actual
-        codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
-        fila[0] = codigo
-
-        # Confirmación final de 21 campos
-        if len(fila) != 21:
-            st.error(f"La salida quedó con {len(fila)} columnas tras saneo (esperado: 21).")
-            st.code(cleaned, language="text")
-            st.stop()
-
-        # Timestamp servidor (col 22 solo para hoja de cálculo)
+        # 3) Vista previa + guardar
         registro_ts = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
         fila_con_ts = fila + [registro_ts]
-        
-        # Encabezados para la vista previa (22 columnas)
+
         columnas = [
             "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/ Incidente","Descripción Evento/ Incidente",
             "Sistema","Area","Ubicación","Impacto","Clasificación","Acción Inmediata","Solución",
@@ -613,32 +497,12 @@ if st.button("Reportar", use_container_width=True):
             "Estado","Vulnerabilidad","Causa","ID Amenaza","Amenaza",
             "Fecha y Hora de Registro"
         ]
-        
         df_prev = pd.DataFrame([fila_con_ts], columns=columnas)
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
 
-        # Avisos de saneo (si hubo)
-        if avisos:
-            st.info(" | ".join(avisos))
-
-        # Guardado
         try:
             ws.append_row(fila_con_ts, value_input_option="RAW")
             st.success("Incidente registrado correctamente.")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
