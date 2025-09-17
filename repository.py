@@ -88,6 +88,8 @@ Reglas:
 - NO inventes ni completes los campos 18 (Vulnerabilidad), 19 (Causa), 20 (ID Amenaza) y 21 (Amenaza).
   Déjalos vacíos siempre.
 - NO inventes fechas: si el reporte no incluye una fecha explícita con día/mes/año (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacíos los campos de fecha. Si solo hay horas, no pongas fecha.
++ Importante: NO uses el carácter | dentro de ningún campo. Si necesitas separar ideas usa ; (punto y coma).
+
 
 + Responde únicamente la línea con 21 campos separados por | (exactamente 20 pipes), sin comentarios ni texto adicional.
 
@@ -671,6 +673,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
