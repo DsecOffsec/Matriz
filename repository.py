@@ -204,12 +204,24 @@ EVINC    = {"evento","incidente"}
 CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
 SISTEMAS_KEYWORDS = ["firewall","kubernetes","cortex","checkpoint","proxy","waf","antivirus","umbrella","ise","vpn","exchange","servidor","server"]
 
-def _looks_ciudad(s: str) -> bool:
-    t = (s or "").strip().lower()
-    return any(c in t for c in CIUDADES)
+CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
+IMPACTOS = {"alto","medio","bajo"}
+def _looks_ciudad(s: str) -> bool: return any(c in (s or "").lower() for c in CIUDADES)
+def _looks_impacto(s: str) -> bool: return (s or "").strip().lower() in IMPACTOS
 
-def _looks_impacto(s: str) -> bool:
-    return (s or "").strip().lower() in IMPACTOS
+if _looks_ciudad(fila[5]) and not _looks_ciudad(fila[7]):
+    fila[7], fila[5] = fila[5], ""
+
+# Si en Área hay impacto → mover a Impacto
+if _looks_impacto(fila[6]) and not _looks_impacto(fila[8]):
+    fila[8], fila[6] = fila[6].title(), ""
+
+# Si Ubicación está vacía pero en otro campo hay ciudad → moverla
+if not fila[7].strip():
+    for i, val in enumerate(fila):
+        if i not in (5,7) and _looks_ciudad(val):
+            fila[7], fila[i] = val, ""
+            break
 
 def _looks_estado(s: str) -> bool:
     return (s or "").strip().lower() in ESTADOS
@@ -796,6 +808,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
