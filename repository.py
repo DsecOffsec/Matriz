@@ -173,12 +173,6 @@ def _parse_dt_try(s):
     except Exception:
         return None
 
-# Rellenar "Fecha y Hora de Apertura" (col 1) con ahora si viene vacía
-if not fila[1].strip():
-    fila[1] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
-
-# Si tenemos tiempo solución y falta cierre, calcularlo
-ap_dt = _parse_dt_try(fila[1])
 if not fila[14].strip() and fila[15].strip() and ap_dt:
     m = re.search(r"(\d+)\s*horas?\s*(\d+)\s*min", fila[15], flags=re.I)
     if not m:
@@ -692,45 +686,27 @@ user_question = st.text_area(
 )
 
 if st.button("Reportar", use_container_width=True):
-    if not user_question.strip():
-        st.warning("Por favor, describe el incidente antes de continuar.")
-        st.stop()
+            # --- Realineo semántico mínimo ---
+        CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
+        IMPACTOS = {"alto","medio","bajo"}
+        def _looks_ciudad(s: str) -> bool: return any(c in (s or "").lower() for c in CIUDADES)
+        def _looks_impacto(s: str) -> bool: return (s or "").strip().lower() in IMPACTOS
 
-    prompt = persona + user_question.strip()
+        # Si en Sistema hay ciudad → mover a Ubicación
+        if _looks_ciudad(fila[5]) and not _looks_ciudad(fila[7]):
+            fila[7], fila[5] = fila[5], ""
 
-    with st.spinner("Generando y validando la fila..."):
-        last_err, response_text = None, None
-        for _ in range(2):
-            try:
-                response = model.generate_content([prompt], generation_config={"temperature": 0.2})
-                response_text = response.text if hasattr(response, "text") else str(response)
-                break
-            except Exception as e:
-                last_err = e
-        if response_text is None:
-            st.error(f"Error al generar contenido: {last_err}")
-            st.stop()
+        # Si en Área hay impacto → mover a Impacto
+        if _looks_impacto(fila[6]) and not _looks_impacto(fila[8]):
+            fila[8], fila[6] = fila[6].title(), ""
 
-        cleaned = sanitize_text(response_text)
-        assert_20_pipes(cleaned)
-        fila, avisos = normalize_21_fields(cleaned)
+        # Si Ubicación está vacía pero otro campo trae ciudad → moverla
+        if not fila[7].strip():
+            for i, val in enumerate(fila):
+                if i not in (5,7) and _looks_ciudad(val):
+                    fila[7], fila[i] = val, ""
+                    break
 
-        # Limpieza y canónicos
-        fila = clean_empty_tokens(fila)
-        fila[3] = norm_evento_incidente(fila[3])
-
-        # Forzar a vacío 18–21 (índices 17..20)
-        fila[17] = ""  # Vulnerabilidad
-        fila[18] = ""  # Causa
-        fila[19] = ""  # ID Amenaza
-        fila[20] = ""  # Amenaza
-
-        # Autorrelleno de fechas desde el texto libre
-        ap_auto, ci_auto = fechas_desde_texto(user_question)
-        if not fila[1].strip() and ap_auto:
-            fila[1] = ap_auto
-        if not fila[14].strip() and ci_auto:
-            fila[14] = ci_auto
 
         # Tiempo de solución por fechas; si no, por horas en el texto
         if not fila[15].strip():
@@ -802,6 +778,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
