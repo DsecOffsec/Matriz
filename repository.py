@@ -166,12 +166,6 @@ def assert_20_pipes(s: str):
     if cnt != 20:
         st.info(f"Se detectaron {cnt+1} campos; se fusionará el excedente en 'Descripción'.")
         
-fila, avisos = normalize_21_fields(cleaned)
-fila = clean_empty_tokens(fila)
-fila[3] = norm_evento_incidente(fila[3])
-# Forzar vacíos 18–21
-fila[17] = ""; fila[18] = ""; fila[19] = ""; fila[20] = ""
-
 # =================== REALINEO SEMÁNTICO + FECHAS POR DEFECTO ===================
 def _parse_dt_try(s):
     try:
@@ -808,6 +802,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
