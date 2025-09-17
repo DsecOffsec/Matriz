@@ -165,13 +165,6 @@ def assert_20_pipes(s: str):
     cnt = s.count("|")
     if cnt != 20:
         st.info(f"Se detectaron {cnt+1} campos; se fusionará el excedente en 'Descripción'.")
-        
-# =================== REALINEO SEMÁNTICO + FECHAS POR DEFECTO ===================
-def _parse_dt_try(s):
-    try:
-        return datetime.strptime(s.strip(), "%Y-%m-%d %H:%M")
-    except Exception:
-        return None
 
 # 2) Realineo semántico (detectar “valores típicos” fuera de lugar y moverlos)
 IMPACTOS = {"alto","medio","bajo"}
@@ -183,6 +176,7 @@ SISTEMAS_KEYWORDS = ["firewall","kubernetes","cortex","checkpoint","proxy","waf"
 CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
 IMPACTOS = {"alto","medio","bajo"}
 def _looks_ciudad(s: str) -> bool: return any(c in (s or "").lower() for c in CIUDADES)
+    
 def _looks_impacto(s: str) -> bool: return (s or "").strip().lower() in IMPACTOS
 
     if _looks_ciudad(fila[5]) and not _looks_ciudad(fila[7]):
@@ -794,6 +788,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
