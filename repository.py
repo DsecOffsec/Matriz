@@ -686,7 +686,41 @@ user_question = st.text_area(
 )
 
 if st.button("Reportar", use_container_width=True):
-            # --- Realineo semántico mínimo ---
+    if not user_question.strip():
+        st.warning("Por favor, describe el incidente antes de continuar.")
+        st.stop()
+
+    prompt = persona + user_question.strip()
+
+    with st.spinner("Generando y validando la fila..."):
+        # 1) LLM
+        try:
+            resp = model.generate_content([prompt], generation_config={"temperature": 0.2})
+            response_text = resp.text if hasattr(resp, "text") else str(resp)
+        except Exception as e:
+            st.error(f"Error al generar contenido: {e}")
+            st.stop()
+
+        # 2) Saneo + normalización a 21 columnas
+        cleaned = sanitize_text(response_text)
+        assert_20_pipes(cleaned)
+        fila, avisos = normalize_21_fields(cleaned)
+        fila = clean_empty_tokens(fila)
+        fila[3] = "Evento" if "evento" in (fila[3] or "").lower() else "Incidente"
+
+        # Forzar vacíos 18–21
+        fila[17] = ""; fila[18] = ""; fila[19] = ""; fila[20] = ""
+
+        # 3) Fechas: extraer del texto y defaults
+        ap_auto, ci_auto = fechas_desde_texto(user_question)
+        # Si el modelo no dio apertura, usa ahora
+        if not fila[1].strip():
+            fila[1] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+        # Si no hay cierre y el extractor encontró, úsalo
+        if not fila[14].strip() and ci_auto:
+            fila[14] = ci_auto
+
+        # 4) Realineo semántico mínimo (corrige campos corridos)
         CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
         IMPACTOS = {"alto","medio","bajo"}
         def _looks_ciudad(s: str) -> bool: return any(c in (s or "").lower() for c in CIUDADES)
@@ -707,18 +741,18 @@ if st.button("Reportar", use_container_width=True):
                     fila[7], fila[i] = val, ""
                     break
 
-
-        # Tiempo de solución por fechas; si no, por horas en el texto
+        # 5) Tiempo de solución
         if not fila[15].strip():
             fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
         if not fila[15].strip():
             fila[15] = calcula_tiempo_desde_texto(user_question)
 
-        # Modo reporte (allowlist) + heurística
+        # 6) Inferencias y normalizaciones
+        # Modo Reporte
         fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question),
                               ["Correo","Jira","Teléfono","Monitoreo","Webex","WhatsApp"]) or "Otro"
 
-        # Ubicación
+        # Ubicación (si quedó vacía)
         if not fila[7].strip():
             fila[7] = detectar_ubicacion_ext(user_question) or "La Paz, Bolivia"
 
@@ -728,10 +762,10 @@ if st.button("Reportar", use_container_width=True):
         if not fila[11].strip():
             fila[11] = infer_solucion(user_question)
 
-        # Clasificación final (catálogo + patrones)
+        # Clasificación
         fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
 
-        # Área GTIC / Encargado
+        # Área de GTIC / Encargado
         if not fila[12].strip():
             fila[12] = infer_area_coordinando(user_question)
         if not fila[13].strip():
@@ -739,45 +773,41 @@ if st.button("Reportar", use_container_width=True):
 
         # Sistema / Área
         if not fila[5].strip():
-            fila[5] = infer_sistema(user_question) or "Palo Alto"
+            fila[5] = infer_sistema(user_question) or "Firewall"
         if not fila[6].strip():
             fila[6] = infer_area(user_question)
 
-        # Estado por defecto si falta
+        # Estado por defecto
         if not fila[16].strip():
             fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
 
-        # Validaciones mínimas
-        if not fila[5].strip():
-            st.error("Falta definir el **Sistema** afectado.")
-            st.stop()
-
-        # Confirmación exacta de 21 campos
+        # 7) Validaciones finales
         if len(fila) != 21:
-            st.error(f"La salida quedó con {len(fila)} columnas tras saneo (esperado: 21).")
+            st.error(f"La salida quedó con {len(fila)} columnas (esperado: 21).")
             st.code(cleaned, language="text")
             st.stop()
 
-        # Código (col 0) + timestamp (col 22)
+        # 8) Código + timestamp
         codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
         fila[0] = codigo
         registro_ts = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
         fila_con_ts = fila + [registro_ts]
 
-        # Vista previa
+        # 9) Vista previa
         df_prev = pd.DataFrame([fila_con_ts], columns=COLUMNAS + ["Hora de reporte"])
         st.subheader("Vista previa")
         st.dataframe(df_prev, use_container_width=True)
-
         if avisos:
             st.info(" | ".join(avisos))
 
-        # Guardar en Sheets
+        # 10) Guardar
         try:
             ws.append_row(fila_con_ts, value_input_option="USER_ENTERED")
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
+
 
 
 
