@@ -740,7 +740,73 @@ if st.button("Reportar", use_container_width=True):
         if _looks_estado(fila[6]): 
             _put(16, fila[6].capitalize()); fila[6] = ""
         if not _looks_ciudad(fila[7]) and _looks_sistema(fila[7]):
-            _put(5, fila[7]); fila[7] = detectar_ubicacion_ext(user_question) or ""
+            _put(5, fila[7]); fila[7] = detectar_ubicacion_ext(user_question) or "La paz"
+
+        # 5) Tiempo de solución
+        if not fila[15].strip():
+            fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
+        if not fila[15].strip():
+            fila[15] = calcula_tiempo_desde_texto(user_question)
+
+        # 6) Inferencias y normalizaciones
+        # Modo Reporte
+        fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question),
+                              ["Correo","Jira","Teléfono","Monitoreo","Webex","WhatsApp"]) or "Otro"
+
+        # Ubicación (si quedó vacía)
+        if not fila[7].strip():
+            fila[7] = detectar_ubicacion_ext(user_question) or "La Paz, Bolivia"
+
+        # Acción inmediata y Solución
+        if not fila[10].strip():
+            fila[10] = infer_accion_inmediata(user_question)
+        if not fila[11].strip():
+            fila[11] = infer_solucion(user_question)
+
+        # Clasificación
+        fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
+
+        # Área de GTIC / Encargado
+        if not fila[12].strip():
+            fila[12] = infer_area_coordinando(user_question)
+        if not fila[13].strip():
+            fila[13] = extraer_encargado(user_question)
+
+        # Sistema / Área
+        if not fila[5].strip():
+            fila[5] = infer_sistema(user_question) or "Firewall"
+        if not fila[6].strip():
+            fila[6] = infer_area(user_question)
+
+        # Estado por defecto
+        if not fila[16].strip():
+            fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
+
+        # 7) Validaciones finales
+        if len(fila) != 21:
+            st.error(f"La salida quedó con {len(fila)} columnas (esperado: 21).")
+            st.code(cleaned, language="text")
+            st.stop()
+
+        # 8) Código + timestamp
+        codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
+        fila[0] = codigo
+        registro_ts = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
+        fila_con_ts = fila + [registro_ts]
+
+        # 9) Vista previa
+        df_prev = pd.DataFrame([fila_con_ts], columns=COLUMNAS + ["Hora de reporte"])
+        st.subheader("Vista previa")
+        st.dataframe(df_prev, use_container_width=True)
+        if avisos:
+            st.info(" | ".join(avisos))
+
+        # 10) Guardar
+        try:
+            ws.append_row(fila_con_ts, value_input_option="USER_ENTERED")
+            st.success(f"Incidente registrado correctamente: {codigo}")
+        except Exception as e:
+            st.error(f"No se pudo escribir en la hoja: {e}")
 
 
 
