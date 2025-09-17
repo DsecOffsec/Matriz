@@ -161,9 +161,145 @@ def sanitize_text(s: str) -> str:
     return s.strip().strip('"').strip()
 
 def assert_20_pipes(s: str):
-    # Aviso en vez de abortar; dejamos que normalize_21_fields repare
-    if s.count("|") != 20:
-        st.info(f"Aviso: el modelo devolvió {s.count('|')} pipes. Intentaré normalizar a 21 columnas.")
+    """Muestra un aviso si la línea no tiene exactamente 20 pipes (21 campos)."""
+    cnt = s.count("|")
+    if cnt != 20:
+        st.info(f"Se detectaron {cnt+1} campos; se fusionará el excedente en 'Descripción'.")
+        
+fila, avisos = normalize_21_fields(cleaned)
+fila = clean_empty_tokens(fila)
+fila[3] = norm_evento_incidente(fila[3])
+# Forzar vacíos 18–21
+fila[17] = ""; fila[18] = ""; fila[19] = ""; fila[20] = ""
+
+# =================== REALINEO SEMÁNTICO + FECHAS POR DEFECTO ===================
+def _parse_dt_try(s):
+    try:
+        return datetime.strptime(s.strip(), "%Y-%m-%d %H:%M")
+    except Exception:
+        return None
+
+# Rellenar "Fecha y Hora de Apertura" (col 1) con ahora si viene vacía
+if not fila[1].strip():
+    fila[1] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
+
+# Si tenemos tiempo solución y falta cierre, calcularlo
+ap_dt = _parse_dt_try(fila[1])
+if not fila[14].strip() and fila[15].strip() and ap_dt:
+    m = re.search(r"(\d+)\s*horas?\s*(\d+)\s*min", fila[15], flags=re.I)
+    if not m:
+        m = re.search(r"(\d+)\s*min", fila[15], flags=re.I)
+        if m:
+            delta = timedelta(minutes=int(m.group(1)))
+            fila[14] = (ap_dt + delta).strftime("%Y-%m-%d %H:%M")
+    else:
+        horas, mins = int(m.group(1)), int(m.group(2))
+        delta = timedelta(hours=horas, minutes=mins)
+        fila[14] = (ap_dt + delta).strftime("%Y-%m-%d %H:%M")
+
+# 2) Realineo semántico (detectar “valores típicos” fuera de lugar y moverlos)
+IMPACTOS = {"alto","medio","bajo"}
+ESTADOS  = {"cerrado","en investigación","en investigacion"}
+EVINC    = {"evento","incidente"}
+CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
+SISTEMAS_KEYWORDS = ["firewall","kubernetes","cortex","checkpoint","proxy","waf","antivirus","umbrella","ise","vpn","exchange","servidor","server"]
+
+def _looks_ciudad(s: str) -> bool:
+    t = (s or "").strip().lower()
+    return any(c in t for c in CIUDADES)
+
+def _looks_impacto(s: str) -> bool:
+    return (s or "").strip().lower() in IMPACTOS
+
+def _looks_estado(s: str) -> bool:
+    return (s or "").strip().lower() in ESTADOS
+
+def _looks_evento_incidente(s: str) -> bool:
+    return (s or "").strip().lower() in EVINC
+
+def _looks_sistema(s: str) -> bool:
+    t = (s or "").strip().lower()
+    return any(k in t for k in SISTEMAS_KEYWORDS)
+
+# a) Evento/Incidente (col 3)
+if not _looks_evento_incidente(fila[3]):
+    for i, val in enumerate(fila):
+        if _looks_evento_incidente(val):
+            fila[3], fila[i] = val, ""
+            break
+    if not _looks_evento_incidente(fila[3]):
+        fila[3] = "Incidente"
+
+# b) Impacto (col 8)
+if not _looks_impacto(fila[8]):
+    for i, val in enumerate(fila):
+        if i == 8: 
+            continue
+        if _looks_impacto(val):
+            fila[8], fila[i] = val.title(), ""
+            break
+
+# c) Estado (col 16)
+if not _looks_estado(fila[16]):
+    for i, val in enumerate(fila):
+        if i == 16:
+            continue
+        if _looks_estado(val):
+            fila[16], fila[i] = val.capitalize(), ""
+            break
+
+# d) Ubicación (col 7) vs Sistema (col 5) y Área (col 6)
+#    Si en Sistema hay ciudad → mover a Ubicación
+if _looks_ciudad(fila[5]) and not _looks_ciudad(fila[7]):
+    fila[7], fila[5] = fila[5], ""
+
+#    Si en Área hay impacto → mandarlo a Impacto si ésta sigue vacía
+if _looks_impacto(fila[6]) and not _looks_impacto(fila[8]):
+    fila[8], fila[6] = fila[6].title(), ""
+
+#    Si Ubicación está vacía pero en algún otro lado hay ciudad → moverla
+if not fila[7].strip():
+    for i, val in enumerate(fila):
+        if i in (5,7): 
+            continue
+        if _looks_ciudad(val):
+            fila[7], fila[i] = val, ""
+            break
+
+# e) Sistema (col 5). Si vacío o no parece sistema → inferir por texto libre
+if not fila[5].strip() or (fila[5] and not _looks_sistema(fila[5])):
+    inferido = infer_sistema(user_question)
+    if inferido:
+        fila[5] = inferido
+    # Si quedó ciudad en Sistema, muévela definitivamente a Ubicación
+    if _looks_ciudad(fila[5]):
+        if not fila[7].strip():
+            fila[7] = fila[5]
+        fila[5] = ""
+
+# f) Área (col 6). Si quedó vacía, intenta inferir
+if not fila[6].strip():
+    fila[6] = infer_area(user_question)
+
+# g) Modo Reporte (col 2) – normalizar
+fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question),
+                      ["Correo","Jira","Teléfono","Monitoreo","Webex","WhatsApp"]) or "Otro"
+
+# h) Clasificación (col 9) – catálogo + inferencia
+fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
+
+# i) Acción inmediata / Solución – completar si faltan
+if not fila[10].strip():
+    fila[10] = infer_accion_inmediata(user_question)
+if not fila[11].strip():
+    fila[11] = infer_solucion(user_question)
+
+# j) Área de GTIC / Encargado
+if not fila[12].strip():
+    fila[12] = infer_area_coordinando(user_question)
+if not fila[13].strip():
+    fila[13] = extraer_encargado(user_question)
+# =================================================================
 
 def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     avisos = []
@@ -188,15 +324,20 @@ def is_empty_token(x: str) -> bool:
     return x.strip().lower() in {""}
 
 def clean_empty_tokens(parts: list[str]) -> list[str]:
-    return [("" if is_empty_token(p) else p) for p in parts]
+    """Quita espacios extra en cada token sin alterar posiciones."""
+    return [(p or "").strip() for p in parts]
 
-def norm_evento_incidente(v: str) -> str:
-    v2 = (v or "").strip().lower()
-    if "inciden" in v2:
-        return "Incidente"
-    if "evento" in v2:
-        return "Evento"
-    return "Incidente"
+def norm_opcion(valor: str, opciones: list[str]) -> str:
+    """Normaliza por similitud básica contra un set de opciones."""
+    v = (valor or "").strip().lower()
+    for op in opciones:
+        if v == op.lower():
+            return op
+    # sinonimos rápidos
+    if v in ("telefono","teléfono","tel"): return "Teléfono"
+    if v in ("email","correo"): return "Correo"
+    return valor or ""
+
 
 def parse_dt(s: str):
     s = s.strip()
@@ -565,6 +706,7 @@ if st.button("Reportar", use_container_width=True):
             st.stop()
 
         cleaned = sanitize_text(response_text)
+        assert_20_pipes(cleaned)
         fila, avisos = normalize_21_fields(cleaned)
 
         # Limpieza y canónicos
@@ -654,5 +796,6 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
