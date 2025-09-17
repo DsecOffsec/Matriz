@@ -166,123 +166,6 @@ def assert_20_pipes(s: str):
     if cnt != 20:
         st.info(f"Se detectaron {cnt+1} campos; se fusionará el excedente en 'Descripción'.")
 
-# 2) Realineo semántico (detectar “valores típicos” fuera de lugar y moverlos)
-IMPACTOS = {"alto","medio","bajo"}
-ESTADOS  = {"cerrado","en investigación","en investigacion"}
-EVINC    = {"evento","incidente"}
-CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
-SISTEMAS_KEYWORDS = ["firewall","kubernetes","cortex","checkpoint","proxy","waf","antivirus","umbrella","ise","vpn","exchange","servidor","server"]
-
-CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
-IMPACTOS = {"alto","medio","bajo"}
-def _looks_ciudad(s: str) -> bool: return any(c in (s or "").lower() for c in CIUDADES)
-    
-def _looks_impacto(s: str) -> bool: return (s or "").strip().lower() in IMPACTOS
-
-    if _looks_ciudad(fila[5]) and not _looks_ciudad(fila[7]):
-        fila[7], fila[5] = fila[5], ""
-    
-    # Si en Área hay impacto → mover a Impacto
-    if _looks_impacto(fila[6]) and not _looks_impacto(fila[8]):
-        fila[8], fila[6] = fila[6].title(), ""
-    
-    # Si Ubicación está vacía pero en otro campo hay ciudad → moverla
-    if not fila[7].strip():
-        for i, val in enumerate(fila):
-            if i not in (5,7) and _looks_ciudad(val):
-                fila[7], fila[i] = val, ""
-                break
-
-def _looks_estado(s: str) -> bool:
-    return (s or "").strip().lower() in ESTADOS
-
-def _looks_evento_incidente(s: str) -> bool:
-    return (s or "").strip().lower() in EVINC
-
-def _looks_sistema(s: str) -> bool:
-    t = (s or "").strip().lower()
-    return any(k in t for k in SISTEMAS_KEYWORDS)
-
-# a) Evento/Incidente (col 3)
-if not _looks_evento_incidente(fila[3]):
-    for i, val in enumerate(fila):
-        if _looks_evento_incidente(val):
-            fila[3], fila[i] = val, ""
-            break
-    if not _looks_evento_incidente(fila[3]):
-        fila[3] = "Incidente"
-
-# b) Impacto (col 8)
-if not _looks_impacto(fila[8]):
-    for i, val in enumerate(fila):
-        if i == 8: 
-            continue
-        if _looks_impacto(val):
-            fila[8], fila[i] = val.title(), ""
-            break
-
-# c) Estado (col 16)
-if not _looks_estado(fila[16]):
-    for i, val in enumerate(fila):
-        if i == 16:
-            continue
-        if _looks_estado(val):
-            fila[16], fila[i] = val.capitalize(), ""
-            break
-
-# d) Ubicación (col 7) vs Sistema (col 5) y Área (col 6)
-#    Si en Sistema hay ciudad → mover a Ubicación
-if _looks_ciudad(fila[5]) and not _looks_ciudad(fila[7]):
-    fila[7], fila[5] = fila[5], ""
-
-#    Si en Área hay impacto → mandarlo a Impacto si ésta sigue vacía
-if _looks_impacto(fila[6]) and not _looks_impacto(fila[8]):
-    fila[8], fila[6] = fila[6].title(), ""
-
-#    Si Ubicación está vacía pero en algún otro lado hay ciudad → moverla
-if not fila[7].strip():
-    for i, val in enumerate(fila):
-        if i in (5,7): 
-            continue
-        if _looks_ciudad(val):
-            fila[7], fila[i] = val, ""
-            break
-
-# e) Sistema (col 5). Si vacío o no parece sistema → inferir por texto libre
-if not fila[5].strip() or (fila[5] and not _looks_sistema(fila[5])):
-    inferido = infer_sistema(user_question)
-    if inferido:
-        fila[5] = inferido
-    # Si quedó ciudad en Sistema, muévela definitivamente a Ubicación
-    if _looks_ciudad(fila[5]):
-        if not fila[7].strip():
-            fila[7] = fila[5]
-        fila[5] = ""
-
-# f) Área (col 6). Si quedó vacía, intenta inferir
-if not fila[6].strip():
-    fila[6] = infer_area(user_question)
-
-# g) Modo Reporte (col 2) – normalizar
-fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question),
-                      ["Correo","Jira","Teléfono","Monitoreo","Webex","WhatsApp"]) or "Otro"
-
-# h) Clasificación (col 9) – catálogo + inferencia
-fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
-
-# i) Acción inmediata / Solución – completar si faltan
-if not fila[10].strip():
-    fila[10] = infer_accion_inmediata(user_question)
-if not fila[11].strip():
-    fila[11] = infer_solucion(user_question)
-
-# j) Área de GTIC / Encargado
-if not fila[12].strip():
-    fila[12] = infer_area_coordinando(user_question)
-if not fila[13].strip():
-    fila[13] = extraer_encargado(user_question)
-# =================================================================
-
 def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     avisos = []
     parts = [p.strip() for p in raw.split("|")]
@@ -788,6 +671,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
