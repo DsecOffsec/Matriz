@@ -25,7 +25,7 @@ REGION     = st.secrets.get("VERTEX_REGION", "us-central1")
 SA_INFO    = st.secrets["GCP_SERVICE_ACCOUNT_JSON"]  # JSON completo de la SA
 
 creds = Credentials.from_service_account_info(SA_INFO)
-vertex_init(project=PROJECT_ID, location=REGION, credentials=creds)
+vertex_init(project=PROJECT_ID, location=REGION)
 
 # Usa el alias de modelo SIN sufijo de versión para evitar 404 por región/permisos
 model = GenerativeModel("gemini-1.5-flash")
@@ -814,6 +814,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
