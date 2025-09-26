@@ -55,7 +55,7 @@ def normalize_21_fields(raw: str):
     return parts
 
 def generar_codigo_inc(ws) -> str:
-    \"\"\"Formato: INC-[DD]-[MM]-[NNN] (correlativo por día).\"\"\"
+    #\"\"\"Formato: INC-[DD]-[MM]-[NNN] (correlativo por día).\"\"\"
     now = datetime.now(TZ)
     dd = now.day
     mm = now.month
@@ -125,3 +125,4 @@ if st.button(\"Enviar a IA y guardar\", use_container_width=True):
         st.success(f\"✅ Guardado con CODIGO: {fila[0]}\")
     except Exception as e:
         st.error(f\"No se pudo guardar en la hoja: {e}\")
+
