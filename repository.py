@@ -640,25 +640,24 @@ if st.button("Reportar", use_container_width=True):
 
     prompt = persona + user_question.strip()
 
-   with st.spinner("Generando y validando la fila..."):
+    with st.spinner("Generando y validando la fila..."):
         # 1) LLM (con timeout + trazas)
         response_text = generar_con_timeout(prompt, temperature=0.2, timeout_s=30)
-    
+
         # 2) Limpieza / normalización
         st.write(":grey[→ Normalizando respuesta…]")
-       try:
+        try:
             cleaned = sanitize_text(response_text)
             assert_20_pipes(cleaned)
             fila, avisos = normalize_21_fields(cleaned)
             st.write(":grey[✓ Normalización OK]")
         except Exception as e:
             st.error(f"Error en normalización: {e}")
-            st.stop()    
-    # 3) Cualquier otra validación/ajuste que hagas…
-    # st.write(":grey[→ Ajustando campos…]")
+            st.stop()
 
-    # 4) Append a Sheets (con timeout)
-    append_row_seguro(ws, fila, timeout_s=30)
+        # 3) Append a Sheets (con timeout)
+        append_row_seguro(ws, fila, timeout_s=30)
+
 
         # 2) Saneo + normalización a 21 columnas
         cleaned = sanitize_text(response_text)
@@ -901,6 +900,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
