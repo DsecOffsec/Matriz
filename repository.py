@@ -1,35 +1,37 @@
+# --- IMPORTS ---
 import streamlit as st
 import gspread
 import pandas as pd
 import re
 import json
-from typing import Optional
+from typing import Optional, Iterable
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
-import google.generativeai as genai
-from typing import List, Tuple
+
+# Vertex AI
 from vertexai import init as vertex_init
+from vertexai.generative_models import GenerativeModel
+from google.oauth2.service_account import Credentials
+
+# --- CONFIG GOOGLE SHEETS (lo que ya tenías) ---
+# gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
+# SHEET_ID = "..." ; sh = gc.open_by_key(SHEET_ID) ; ws = sh.worksheet("Reportes")
 
 st.title("MATRIZ DE REPORTES DSEC")
 
-# ---------------------------
-# Conexiones y configuración
-# ---------------------------
-gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
-# Recomendado: mover a secrets -> st.secrets["connections"]["SHEET_ID"]
-SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"
-sh = gc.open_by_key(SHEET_ID)
-ws = sh.worksheet("Reportes")
-
-PROJECT_ID = st.secrets["GCP_PROJECT_ID"]
+# --- CONFIG VERTEX AI (usa tu Service Account en secrets) ---
+PROJECT_ID = st.secrets["GCP_PROJECT_ID"]          # p.ej. "mi-proyecto-gcp"
 REGION     = st.secrets.get("VERTEX_REGION", "us-central1")
-vertex_init(project=PROJECT_ID, location=REGION
+SA_INFO    = st.secrets["GCP_SERVICE_ACCOUNT_JSON"]  # JSON completo de la SA
 
-api_key = st.secrets["GOOGLE_API_KEY"]
-genai.configure(api_key=api_key)
+creds = Credentials.from_service_account_info(SA_INFO)
+vertex_init(project=PROJECT_ID, location=REGION, credentials=creds)
+
+# Usa el alias de modelo SIN sufijo de versión para evitar 404 por región/permisos
 model = GenerativeModel("gemini-1.5-flash")
 
 TZ = ZoneInfo("America/La_Paz")
+
 
 st.markdown("""
 ### 📝 Instrucciones para registrar un incidente
@@ -812,5 +814,6 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
