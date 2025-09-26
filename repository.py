@@ -77,7 +77,7 @@ def generar_codigo_inc(ws) -> str:
 # ==============================
 # Prompt mínimo a IA (sin extra lógica)
 # ==============================
-persona = f\"\"\"
+persona = f"""
 Devuelve UNA SOLA LÍNEA con **exactamente 21** campos separados por | en este orden:
 {COLUMNAS}
 
@@ -87,7 +87,8 @@ Reglas:
 - No agregues comentarios ni texto extra. Solo la línea con 21 campos.
 
 [REPORTE]:
-\"\"\"
+"""
+
 
 # ==============================
 # UI mínima
@@ -128,5 +129,6 @@ if st.button(\"Enviar a IA y guardar\", use_container_width=True):
         st.success(f\"✅ Guardado con CODIGO: {fila[0]}\")
     except Exception as e:
         st.error(f\"No se pudo guardar en la hoja: {e}\")
+
 
 
