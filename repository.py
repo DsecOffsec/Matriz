@@ -1,3 +1,4 @@
+import streamlit as st
 import gspread
 import pandas as pd
 import re
@@ -806,3 +807,4 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
