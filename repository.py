@@ -621,7 +621,18 @@ user_question = st.text_area(
     placeholder="Ej: A las 8:00am el área de Contabilidad reporta por Correo que no puede acceder al sistema de Correo corporativo. Como acción inmediata, el usuario reinició el equipo y Mesa de Ayuda validó conectividad sin resultados. Seguridad Informática coordinó la atención y reinició el servicio de Correo en el servidor, verificando autenticación y entrega de mensajes. A las 10:15am el servicio quedó restablecido y se cerró el incidente.",
     help="Incluye: Fecha/hora de apertura, Sistema, Área, Acción inmediata, Solución, Área GTIC que coordinó y Fecha/hora de cierre."
 )
-
+def generar_con_timeout(prompt: str, temperature: float = 0.2, timeout_s: int = 30) -> str:
+    t0 = time.time()
+    st.write(":grey[→ Llamando a Gemini…]")
+    resp = model.generate_content(
+        [prompt],
+        generation_config={"temperature": temperature},
+        request_options={"timeout": timeout_s},
+    )
+    texto = resp.text if hasattr(resp, "text") else str(resp)
+    st.write(f":grey[✓ Gemini OK en {time.time()-t0:.1f}s]")
+    return texto
+    
 if st.button("Reportar", use_container_width=True):
     if not user_question.strip():
         st.warning("Por favor, describe el incidente antes de continuar.")
@@ -635,12 +646,14 @@ if st.button("Reportar", use_container_width=True):
     
         # 2) Limpieza / normalización
         st.write(":grey[→ Normalizando respuesta…]")
-        cleaned = sanitize_text(response_text)
-        # OJO: no sustituyas ' | ' válidos aquí; solo tu lógica de validación
-        assert_20_pipes(cleaned)
-        fila, avisos = normalize_21_fields(cleaned)
-        st.write(":grey[✓ Normalización OK]")
-
+       try:
+            cleaned = sanitize_text(response_text)
+            assert_20_pipes(cleaned)
+            fila, avisos = normalize_21_fields(cleaned)
+            st.write(":grey[✓ Normalización OK]")
+        except Exception as e:
+            st.error(f"Error en normalización: {e}")
+            st.stop()    
     # 3) Cualquier otra validación/ajuste que hagas…
     # st.write(":grey[→ Ajustando campos…]")
 
@@ -888,6 +901,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
