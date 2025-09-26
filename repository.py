@@ -1,17 +1,12 @@
-import streamlit as st
 import gspread
 import pandas as pd
 import re
 import json
-import time
-import socket
-from typing import Optional, Iterable
+from typing import Optional
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import google.generativeai as genai
 from typing import List, Tuple
-from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
-
 
 st.title("MATRIZ DE REPORTES DSEC")
 
@@ -24,13 +19,8 @@ SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"
 sh = gc.open_by_key(SHEET_ID)
 ws = sh.worksheet("Reportes")
 
-API_KEY = st.secrets["GOOGLE_API_KEY"]  # debe ser una API Key de AI Studio
-genai.configure(
-    api_key=API_KEY,
-    client_options={"api_endpoint": "https://generativelanguage.googleapis.com"}  # fuerza AI Studio
-)
-
-model = genai.GenerativeModel(model_name="gemini-1.5-flash")  # <- válido en AI Studio
+api_key = st.secrets["GOOGLE_API_KEY"]
+genai.configure(api_key=api_key)
 model = genai.GenerativeModel("gemini-1.5-flash")
 
 TZ = ZoneInfo("America/La_Paz")
@@ -200,6 +190,17 @@ def is_empty_token(x: str) -> bool:
 def clean_empty_tokens(parts: list[str]) -> list[str]:
     """Quita espacios extra en cada token sin alterar posiciones."""
     return [(p or "").strip() for p in parts]
+
+def norm_opcion(valor: str, opciones: list[str]) -> str:
+    """Normaliza por similitud básica contra un set de opciones."""
+    v = (valor or "").strip().lower()
+    for op in opciones:
+        if v == op.lower():
+            return op
+    # sinonimos rápidos
+    if v in ("telefono","teléfono","tel"): return "Teléfono"
+    if v in ("email","correo"): return "Correo"
+    return valor or ""
 
 
 def parse_dt(s: str):
@@ -498,91 +499,13 @@ def infer_area(texto: str) -> str:
         return m.group(2).strip().title()
     return ""
 
-def _normkey(s: str) -> str:
-    """
-    Normaliza para comparación: sin acentos, minúsculas, solo [a-z0-9 ].
-    """
-    if s is None:
-        return ""
-    s = str(s).strip()
-    s = unicodedata.normalize("NFKD", s)
-    s = "".join(c for c in s if not unicodedata.combining(c))
-    s = s.lower()
-    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
-    return s
+def norm_opcion(valor: str, validos: list[str]) -> str:
+    v = (valor or "").strip().lower()
+    for x in validos:
+        if v == x.lower():
+            return x
+    return ""
 
-# Sinónimos por valor canónico (usa solo los que existan en `validas`)
-_SYNONYMS_BY_CANON = {
-    # Modo de reporte
-    "Teléfono": ["tel", "telefono", "phone", "llamada", "call"],
-    "Correo": ["correo", "email", "e mail", "e-mail", "mail"],
-    "Jira": ["jira", "ticket", "atlassian"],
-    "Monitoreo": ["monitoreo", "monitoring", "alerta", "deteccion", "detector"],
-    "Webex": ["webex", "web ex"],
-    "WhatsApp": ["whatsapp", "wasap", "ws", "whats"],
-
-    # Estado (si lo usas con `validas` de estado)
-    "Abierto": ["abierto", "open"],
-    "Cerrado": ["cerrado", "closed", "resuelto", "solucionado"],
-    "En Proceso": ["en proceso", "progreso", "pendiente", "working", "investigacion"],
-
-    # Impacto/Severidad (si lo usas con `validas` de impacto)
-    "Crítico": ["critico", "critical", "sev1", "sev 1", "severidad 1"],
-    "Alto": ["alto", "high", "sev2", "severidad 2"],
-    "Medio": ["medio", "medium", "sev3"],
-    "Bajo": ["bajo", "low", "sev4"],
-}
-
-def norm_opcion(valor: Optional[str], validas: Iterable[str]) -> Optional[str]:
-    """
-    Normaliza `valor` a una de las opciones de `validas`.
-    - Coincidencia exacta (acento/espacio/índice-insensible)
-    - Sinónimos (solo si el canónico existe en `validas`)
-    - Fuzzy match (difflib) sobre claves normalizadas
-    Devuelve el canónico tal como aparece en `validas`, o None si no hay match.
-    """
-    if valor is None:
-        return None
-
-    # Mapa de canónicos válidos: normalizado -> forma exacta provista en `validas`
-    validas = list(validas)
-    valid_map = {_normkey(v): v for v in validas}
-
-    # 1) ¿coincide directamente con alguna válida?
-    v_norm = _normkey(valor)
-    if v_norm in valid_map:
-        return valid_map[v_norm]
-
-    # 2) ¿coincide con algún sinónimo de un canónico que esté en `validas`?
-    #    (solo construimos sinónimos de canónicos que realmente estén permitidos)
-    syn_map = {}
-    for canon in validas:
-        canon_key = _normkey(canon)
-        # encuentra clave exacta del canónico según como lo tienes en _SYNONYMS_BY_CANON
-        # (insensible a acentos y espacios)
-        for syn_canon, syn_list in _SYNONYMS_BY_CANON.items():
-            if _normkey(syn_canon) == canon_key:
-                for s in syn_list:
-                    syn_map[_normkey(s)] = canon  # apúntalo al canónico “real” de `validas`
-                break
-
-    if v_norm in syn_map:
-        return syn_map[v_norm]
-
-    # 3) Fuzzy: buscamos el más parecido entre válidas y sinónimos
-    candidates_keys = list(valid_map.keys()) + list(syn_map.keys())
-    match = difflib.get_close_matches(v_norm, candidates_keys, n=1, cutoff=0.86)
-    if match:
-        k = match[0]
-        # si es válida directa
-        if k in valid_map:
-            return valid_map[k]
-        # si es sinónimo
-        if k in syn_map:
-            return syn_map[k]
-
-    # 4) Sin match
-    return None
 # ---------------------------
 # Generador de CODIGO: INC-<día>-<mes>-<NNN>
 # ---------------------------
@@ -625,53 +548,7 @@ user_question = st.text_area(
     placeholder="Ej: A las 8:00am el área de Contabilidad reporta por Correo que no puede acceder al sistema de Correo corporativo. Como acción inmediata, el usuario reinició el equipo y Mesa de Ayuda validó conectividad sin resultados. Seguridad Informática coordinó la atención y reinició el servicio de Correo en el servidor, verificando autenticación y entrega de mensajes. A las 10:15am el servicio quedó restablecido y se cerró el incidente.",
     help="Incluye: Fecha/hora de apertura, Sistema, Área, Acción inmediata, Solución, Área GTIC que coordinó y Fecha/hora de cierre."
 )
-def check_dns(host: str = "generativelanguage.googleapis.com", retries: int = 2) -> bool:
-    for i in range(retries + 1):
-        try:
-            ip = socket.gethostbyname(host)
-            st.write(f":grey[DNS OK {host} → {ip}]")
-            return True
-        except Exception as e:
-            if i == retries:
-                st.error(f"No se pudo resolver {host}: {e}")
-                return False
-            time.sleep(0.8)
-    return False
 
-def _llamar_modelo(prompt: str, temperature: float):
-    # función pequeña para ejecutar dentro del thread
-    return model.generate_content(
-        [prompt],
-        generation_config={"temperature": temperature},
-    )
-
-def generar_con_timeout(prompt: str, temperature: float = 0.2, timeout_s: int = 30) -> str:
-    # 1) chequeo DNS rápido (evita colgarse si ni siquiera resuelve)
-    if not check_dns("generativelanguage.googleapis.com"):
-        st.stop()
-
-    st.write(":grey[→ Llamando a Gemini…]")
-    t0 = time.time()
-
-    # 2) llamamos al SDK en un hilo y forzamos timeout con .result(timeout=…)
-    with ThreadPoolExecutor(max_workers=1) as ex:
-        fut = ex.submit(_llamar_modelo, prompt, temperature)
-        try:
-            resp = fut.result(timeout=timeout_s)  # <-- SI o SI corta aquí
-        except FuturesTimeout:
-            fut.cancel()
-            st.error(f"Gemini no respondió en {timeout_s}s (timeout forzado). "
-                     "Puede ser bloqueo DNS/proxy o caída del servicio.")
-            st.stop()
-        except Exception as e:
-            fut.cancel()
-            st.error(f"Fallo al llamar a Gemini: {e}")
-            st.stop()
-
-    texto = resp.text if hasattr(resp, "text") else str(resp)
-    st.write(f":grey[✓ Gemini OK en {time.time()-t0:.1f}s]")
-    return texto
-    
 if st.button("Reportar", use_container_width=True):
     if not user_question.strip():
         st.warning("Por favor, describe el incidente antes de continuar.")
@@ -680,23 +557,13 @@ if st.button("Reportar", use_container_width=True):
     prompt = persona + user_question.strip()
 
     with st.spinner("Generando y validando la fila..."):
-        # 1) LLM (con timeout + trazas)
-        response_text = generar_con_timeout(prompt, temperature=0.2, timeout_s=30)
-
-        # 2) Limpieza / normalización
-        st.write(":grey[→ Normalizando respuesta…]")
+        # 1) LLM
         try:
-            cleaned = sanitize_text(response_text)
-            assert_20_pipes(cleaned)
-            fila, avisos = normalize_21_fields(cleaned)
-            st.write(":grey[✓ Normalización OK]")
+            resp = model.generate_content([prompt], generation_config={"temperature": 0.2})
+            response_text = resp.text if hasattr(resp, "text") else str(resp)
         except Exception as e:
-            st.error(f"Error en normalización: {e}")
+            st.error(f"Error al generar contenido: {e}")
             st.stop()
-
-        # 3) Append a Sheets (con timeout)
-        append_row_seguro(ws, fila, timeout_s=30)
-
 
         # 2) Saneo + normalización a 21 columnas
         cleaned = sanitize_text(response_text)
@@ -939,29 +806,3 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
