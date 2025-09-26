@@ -3,7 +3,7 @@ import gspread
 import pandas as pd
 import re
 import json
-from typing import Optional
+from typing import Optional, Iterable
 from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import google.generativeai as genai
@@ -874,6 +874,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
