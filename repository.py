@@ -10,6 +10,8 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import google.generativeai as genai
 from typing import List, Tuple
+from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
+
 
 st.title("MATRIZ DE REPORTES DSEC")
 
@@ -623,14 +625,49 @@ user_question = st.text_area(
     placeholder="Ej: A las 8:00am el área de Contabilidad reporta por Correo que no puede acceder al sistema de Correo corporativo. Como acción inmediata, el usuario reinició el equipo y Mesa de Ayuda validó conectividad sin resultados. Seguridad Informática coordinó la atención y reinició el servicio de Correo en el servidor, verificando autenticación y entrega de mensajes. A las 10:15am el servicio quedó restablecido y se cerró el incidente.",
     help="Incluye: Fecha/hora de apertura, Sistema, Área, Acción inmediata, Solución, Área GTIC que coordinó y Fecha/hora de cierre."
 )
-def generar_con_timeout(prompt: str, temperature: float = 0.2, timeout_s: int = 30) -> str:
-    t0 = time.time()
-    st.write(":grey[→ Llamando a Gemini…]")
-    resp = model.generate_content(
+def check_dns(host: str = "generativelanguage.googleapis.com", retries: int = 2) -> bool:
+    for i in range(retries + 1):
+        try:
+            ip = socket.gethostbyname(host)
+            st.write(f":grey[DNS OK {host} → {ip}]")
+            return True
+        except Exception as e:
+            if i == retries:
+                st.error(f"No se pudo resolver {host}: {e}")
+                return False
+            time.sleep(0.8)
+    return False
+
+def _llamar_modelo(prompt: str, temperature: float):
+    # función pequeña para ejecutar dentro del thread
+    return model.generate_content(
         [prompt],
         generation_config={"temperature": temperature},
-        request_options={"timeout": timeout_s},
     )
+
+def generar_con_timeout(prompt: str, temperature: float = 0.2, timeout_s: int = 30) -> str:
+    # 1) chequeo DNS rápido (evita colgarse si ni siquiera resuelve)
+    if not check_dns("generativelanguage.googleapis.com"):
+        st.stop()
+
+    st.write(":grey[→ Llamando a Gemini…]")
+    t0 = time.time()
+
+    # 2) llamamos al SDK en un hilo y forzamos timeout con .result(timeout=…)
+    with ThreadPoolExecutor(max_workers=1) as ex:
+        fut = ex.submit(_llamar_modelo, prompt, temperature)
+        try:
+            resp = fut.result(timeout=timeout_s)  # <-- SI o SI corta aquí
+        except FuturesTimeout:
+            fut.cancel()
+            st.error(f"Gemini no respondió en {timeout_s}s (timeout forzado). "
+                     "Puede ser bloqueo DNS/proxy o caída del servicio.")
+            st.stop()
+        except Exception as e:
+            fut.cancel()
+            st.error(f"Fallo al llamar a Gemini: {e}")
+            st.stop()
+
     texto = resp.text if hasattr(resp, "text") else str(resp)
     st.write(f":grey[✓ Gemini OK en {time.time()-t0:.1f}s]")
     return texto
@@ -902,6 +939,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
