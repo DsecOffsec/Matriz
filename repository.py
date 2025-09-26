@@ -55,21 +55,24 @@ def normalize_21_fields(raw: str):
     return parts
 
 def generar_codigo_inc(ws) -> str:
-    #\"\"\"Formato: INC-[DD]-[MM]-[NNN] (correlativo por día).\"\"\"
+    """Formato: INC-[DD]-[MM]-[NNN] (correlativo por día)."""
     now = datetime.now(TZ)
-    dd = now.day
-    mm = now.month
-    pref = f\"INC-{dd}-{mm}-\"
-    existentes = ws.col_values(1)  # Primera columna (CODIGO)
+    # Prefijo limpio, sin barras invertidas ni comillas raras
+    pref = f"INC-{now:%d}-{now:%m}-"
+
+    # Leer la primera columna (CODIGO) y encontrar el mayor NNN existente hoy
+    existentes = ws.col_values(1)  # puede devolver [] si está vacío
     max_n = 0
-    rx = re.compile(rf\"^{re.escape(pref)}(\\d{{3}})$\")
+    rx = re.compile(rf"^{re.escape(pref)}(\d{{3}})$")
+
     for c in existentes:
-        m = rx.match((c or \"\").strip())
+        m = rx.match((c or "").strip())
         if m:
             n = int(m.group(1))
             if n > max_n:
                 max_n = n
-    return f\"{pref}{max_n+1:03d}\"
+
+    return f"{pref}{max_n+1:03d}"
 
 # ==============================
 # Prompt mínimo a IA (sin extra lógica)
@@ -125,4 +128,5 @@ if st.button(\"Enviar a IA y guardar\", use_container_width=True):
         st.success(f\"✅ Guardado con CODIGO: {fila[0]}\")
     except Exception as e:
         st.error(f\"No se pudo guardar en la hoja: {e}\")
+
 
