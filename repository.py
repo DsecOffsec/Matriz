@@ -11,21 +11,16 @@ from typing import Optional, List, Tuple
 # CONFIG (puedes editar estos valores o usar st.secrets)
 # =====================================================
 TZ = ZoneInfo("America/La_Paz")
-SHEET_ID = st.secrets.get("SHEET_ID", "")  # o pega aquí el ID como string
-WORKSHEET_NAME = st.secrets.get("WORKSHEET_NAME", "Reportes")
-
-# Si usas cuentas de servicio: st.secrets["connections"]["gsheets"]
-# Formato esperado:
-# {
-#   "type": "...",
-#   "project_id": "...",
-#   "private_key_id": "...",
-#   "private_key": "-----BEGIN PRIVATE KEY-----\\n...\\n-----END PRIVATE KEY-----\\n",
-#   "client_email": "...@...iam.gserviceaccount.com",
-#   "client_id": "...",
-#   "token_uri": "https://oauth2.googleapis.com/token",
-#   "universe_domain": "googleapis.com"
-# }
+SHEET_ID = "1UP_fwvXam8-1IXI-oUbNkqGzb0_IQXh7YsU7ziJVAqE"  # tu ID real
+WORKSHEET_NAME = "Reportes"
+try:
+    gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
+    sh = gc.open_by_key(SHEET_ID)
+    ws = sh.worksheet(WORKSHEET_NAME)
+    st.success("✅ Conectado a Google Sheets correctamente")
+except Exception as e:
+    ws = None
+    st.error(f"No se pudo conectar a Google Sheets: {e}")
 
 # =====================================================
 # UI: Título
@@ -331,9 +326,10 @@ if st.button("Reportar", use_container_width=True):
     st.subheader("✅ Vista previa de la fila (21 columnas + Hora de reporte)")
     st.dataframe(pd.DataFrame([fila_out], columns=COLUMNAS + ["Hora de reporte"]), use_container_width=True)
 
-    if enable_save and ws:
-        try:
-            ws.append_row(fila_out, value_input_option="USER_ENTERED")
-            st.success(f"Incidente guardado: {fila[0]}")
-        except Exception as e:
-            st.error(f"No se pudo escribir en la hoja: {e}")
+if ws:
+    try:
+        ws.append_row(fila_out, value_input_option="USER_ENTERED")
+        st.success("✅ Incidente guardado en Google Sheets")
+    except Exception as e:
+        st.error(f"No se pudo guardar en la hoja: {e}")
+
