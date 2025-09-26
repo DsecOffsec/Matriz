@@ -57,28 +57,28 @@ def normalize_21_fields(raw: str):
 def generar_codigo_inc(ws) -> str:
     """Formato: INC-[DD]-[MM]-[NNN] (correlativo por día)."""
     now = datetime.now(TZ)
-    # Prefijo limpio, sin barras invertidas ni comillas raras
-    pref = f"INC-{now:%d}-{now:%m}-"
+    pref = f"INC-{now:%d}-{now:%m}-"  # <-- sin \ al final
 
-    # Leer la primera columna (CODIGO) y encontrar el mayor NNN existente hoy
-    existentes = ws.col_values(1)  # puede devolver [] si está vacío
+    existentes = ws.col_values(1)
     max_n = 0
     rx = re.compile(rf"^{re.escape(pref)}(\d{{3}})$")
-
     for c in existentes:
         m = rx.match((c or "").strip())
         if m:
             n = int(m.group(1))
             if n > max_n:
                 max_n = n
-
     return f"{pref}{max_n+1:03d}"
+
 
 # ==============================
 # Prompt mínimo a IA (sin extra lógica)
 # ==============================
+# ==============================
+# Prompt mínimo a IA (SIN escapes)
+# ==============================
 persona = f"""
-Devuelve UNA SOLA LÍNEA con **exactamente 21** campos separados por | en este orden:
+Devuelve UNA SOLA LÍNEA con exactamente 21 campos separados por | en este orden:
 {COLUMNAS}
 
 Reglas:
@@ -89,46 +89,50 @@ Reglas:
 [REPORTE]:
 """
 
-
 # ==============================
-# UI mínima
+# UI mínima (SIN escapes)
 # ==============================
-texto = st.text_area(\"Pega el reporte en texto libre:\", height=180)
+texto = st.text_area("Pega el reporte en texto libre:", height=180)
 
-if st.button(\"Enviar a IA y guardar\", use_container_width=True):
+if st.button("Enviar a IA y guardar", use_container_width=True):
     if not texto.strip():
-        st.warning(\"Escribe algo primero.\")
+        st.warning("Escribe algo primero.")
         st.stop()
 
     try:
-        resp = model.generate_content([persona + texto.strip()], generation_config={\"temperature\": 0.2})
-        raw = resp.text if hasattr(resp, \"text\") else str(resp)
+        resp = model.generate_content(
+            [persona + texto.strip()],
+            generation_config={"temperature": 0.2}
+        )
+        raw = resp.text if hasattr(resp, "text") else str(resp)
         raw = sanitize_text(raw)
         assert_20_pipes(raw)
         fila = normalize_21_fields(raw)
         # Forzar vacíos 18–21 por política
-        fila[17] = \"\"; fila[18] = \"\"; fila[19] = \"\"; fila[20] = \"\"
+        fila[17] = ""; fila[18] = ""; fila[19] = ""; fila[20] = ""
     except Exception as e:
-        st.error(f\"IA no devolvió un formato válido: {e}\")
+        st.error(f"IA no devolvió un formato válido: {e}")
         st.stop()
 
     # Insertar CODIGO en la primera columna
     try:
         fila[0] = generar_codigo_inc(ws)
     except Exception as e:
-        st.error(f\"No pude generar el CODIGO: {e}\")
+        st.error(f"No pude generar el CODIGO: {e}")
         st.stop()
 
     # Agregar timestamp (col extra al final)
-    fila_out = fila + [datetime.now(TZ).strftime(\"%Y-%m-%d %H:%M:%S\")]
+    fila_out = fila + [datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")]
 
     # Vista previa y guardado
-    st.dataframe(pd.DataFrame([fila_out], columns=COLUMNAS + [\"Hora de reporte\"]), use_container_width=True)
+    st.dataframe(pd.DataFrame([fila_out], columns=COLUMNAS + ["Hora de reporte"]), use_container_width=True)
     try:
-        ws.append_row(fila_out, value_input_option=\"USER_ENTERED\")
-        st.success(f\"✅ Guardado con CODIGO: {fila[0]}\")
+        ws.append_row(fila_out, value_input_option="USER_ENTERED")
+        st.success(f"✅ Guardado con CODIGO: {fila[0]}")
     except Exception as e:
-        st.error(f\"No se pudo guardar en la hoja: {e}\")
+        st.error(f"No se pudo guardar en la hoja: {e}")
+
+
 
 
 
