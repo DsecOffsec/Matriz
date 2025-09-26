@@ -1,4 +1,3 @@
-import streamlit as st
 import gspread
 import pandas as pd
 import re
@@ -12,7 +11,7 @@ from typing import List, Tuple
 st.title("MATRIZ DE REPORTES DSEC")
 
 # ---------------------------
-# Conexiones y configuraciÃ³n
+# Conexiones y configuración
 # ---------------------------
 gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
 # Recomendado: mover a secrets -> st.secrets["connections"]["SHEET_ID"]
@@ -27,49 +26,49 @@ model = genai.GenerativeModel("gemini-1.5-flash")
 TZ = ZoneInfo("America/La_Paz")
 
 st.markdown("""
-### ðŸ“ Instrucciones para registrar un incidente
+### 📝 Instrucciones para registrar un incidente
 
-Por favor, describe el incidente en **un solo pÃ¡rrafo** incluyendo estos campos **obligatorios**:
+Por favor, describe el incidente en **un solo párrafo** incluyendo estos campos **obligatorios**:
 
-1. **Fecha y hora de apertura** â€” La hora de inicio del incidente/alerta con hora y AM/PM.
+1. **Fecha y hora de apertura** — La hora de inicio del incidente/alerta con hora y AM/PM.
 2. **Modo de reporte** - Si lo reportaron por correo, JIRA, monitoreo, llamada, otros, etc.
-3. **Sistema afectado** â€” Por ejemplo: Correo, VPN, Antivirus, Firewall, etc.  
-4. **Ãrea afectada** â€” El departamento o unidad donde se detectÃ³ el problema.  
-5. **AcciÃ³n inmediata tomada** â€” Lo que hizo el usuario para mitigar el problema.  
-6. **SoluciÃ³n aplicada** â€” AcciÃ³n final que resolviÃ³ el incidente.  
-7. **Ãrea de GTIC que coordinÃ³** â€” DSEC - Seguridad, DITC - Infraestructura, DSTC - Soporte TÃ©cnico, DISC - Sistemas.  
+3. **Sistema afectado** — Por ejemplo: Correo, VPN, Antivirus, Firewall, etc.  
+4. **Área afectada** — El departamento o unidad donde se detectó el problema.  
+5. **Acción inmediata tomada** — Lo que hizo el usuario para mitigar el problema.  
+6. **Solución aplicada** — Acción final que resolvió el incidente.  
+7. **Área de GTIC que coordinó** — DSEC - Seguridad, DITC - Infraestructura, DSTC - Soporte Técnico, DISC - Sistemas.  
 8. **Encargado** - El responsable del incidente/alerta.
 """)
 
 COLUMNAS = [
     "CODIGO","Fecha y Hora de Apertura","Modo Reporte","Evento/ Incidente",
-    "DescripciÃ³n Evento/ Incidente","Sistema","Area","UbicaciÃ³n","Impacto",
-    "ClasificaciÃ³n","AcciÃ³n Inmediata","SoluciÃ³n","Area de GTIC - Coordinando",
-    "Encargado SI","Fecha y Hora de Cierre","Tiempo SoluciÃ³n","Estado",
+    "Descripción Evento/ Incidente","Sistema","Area","Ubicación","Impacto",
+    "Clasificación","Acción Inmediata","Solución","Area de GTIC - Coordinando",
+    "Encargado SI","Fecha y Hora de Cierre","Tiempo Solución","Estado",
     "Vulnerabilidad","Causa","ID Amenaza","Amenaza"
 ]
 
-# Valores vÃ¡lidos / normalizadores rÃ¡pidos
-MODO_VALIDOS = {"correo","jira","telÃ©fono","telefono","monitoreo","webex","whatsapp","otro"}
+# Valores válidos / normalizadores rápidos
+MODO_VALIDOS = {"correo","jira","teléfono","telefono","monitoreo","webex","whatsapp","otro"}
 IMPACTO_VALIDOS = {"alto","medio","bajo"}
-ESTADO_VALIDOS = {"cerrado","en investigaciÃ³n"}
+ESTADO_VALIDOS = {"cerrado","en investigación"}
 
 # ---------------------------
-# GuÃ­as (texto de referencia)
+# Guías (texto de referencia)
 # ---------------------------
 
 CODE_RE = re.compile(r'^\d+\.\d+$')
 
 # ---------------------------
-# Clasificaciones vÃ¡lidas (lista cerrada)
+# Clasificaciones válidas (lista cerrada)
 # ---------------------------
 CLASIF_CANON = {
     "acceso no autorizado": "Acceso no autorizado",
-    "modificaciÃ³n de recursos no autorizado": "ModificaciÃ³n de recursos no autorizado",
+    "modificación de recursos no autorizado": "Modificación de recursos no autorizado",
     "uso inapropiado de recursos": "Uso inapropiado de recursos",
     "no disponibilidad de recursos": "No disponibilidad de recursos",
     "multicomponente": "Multicomponente",
-    "exploraciÃ³n de vulnerabilidades": "ExploraciÃ³n de Vulnerabilidades",
+    "exploración de vulnerabilidades": "Exploración de Vulnerabilidades",
     "otros": "Otros",
 }
 CLASIF_TEXTO = "\n".join([f"- {v}" for v in CLASIF_CANON.values()])
@@ -78,48 +77,48 @@ CLASIF_TEXTO = "\n".join([f"- {v}" for v in CLASIF_CANON.values()])
 # Prompt (CODIGO lo genera backend y no se inventan fechas)
 # ---------------------------
 persona = f"""
-Eres un asistente experto en seguridad informÃ¡tica. Convierte el reporte en UNA SOLA LÃNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de lÃ­nea. Exactamente 20 pipes.
+Eres un asistente experto en seguridad informática. Convierte el reporte en UNA SOLA LÍNEA con exactamente 21 valores separados por | (pipe). Sin encabezados, sin markdown, sin explicaciones, sin saltos de línea. Exactamente 20 pipes.
 {COLUMNAS}
 
 Reglas:
-- Las claves 18-21 ("Vulnerabilidad","Causa","ID Amenaza","Amenaza") siempre vacÃ­as.
-- No inventes fechas. Usa "YYYY-MM-DD HH:MM" solo si el texto menciona dÃ­a/mes/aÃ±o; si no, deja vacÃ­o.
-- Zona horaria: America/La_Paz. En el aÃ±o 2025
+- Las claves 18-21 ("Vulnerabilidad","Causa","ID Amenaza","Amenaza") siempre vacías.
+- No inventes fechas. Usa "YYYY-MM-DD HH:MM" solo si el texto menciona día/mes/año; si no, deja vacío.
+- Zona horaria: America/La_Paz. En el año 2025
 - NO inventes ni completes los campos 18 (Vulnerabilidad), 19 (Causa), 20 (ID Amenaza) y 21 (Amenaza).
-  DÃ©jalos vacÃ­os siempre.
-- NO inventes fechas: si el reporte no incluye una fecha explÃ­cita con dÃ­a/mes/aÃ±o (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacÃ­os los campos de fecha. Si solo hay horas, no pongas fecha.
-- Importante: NO uses el carÃ¡cter | dentro de ningÃºn campo. Si necesitas separar ideas usa ; (punto y coma).
-- Responde Ãºnicamente la lÃ­nea con 21 campos separados por | (exactamente 20 pipes), sin comentarios ni texto adicional.
+  Déjalos vacíos siempre.
+- NO inventes fechas: si el reporte no incluye una fecha explícita con día/mes/año (p. ej., "2025-08-10", "10/08/2025" o "10 de agosto de 2025"), deja vacíos los campos de fecha. Si solo hay horas, no pongas fecha.
+- Importante: NO uses el carácter | dentro de ningún campo. Si necesitas separar ideas usa ; (punto y coma).
+- Responde únicamente la línea con 21 campos separados por | (exactamente 20 pipes), sin comentarios ni texto adicional.
 
 Columnas y formato:
-1. CODIGO â†’ (dejar vacÃ­o; lo genera el sistema).
-2. Fecha y Hora de Apertura â†’ YYYY-MM-DD HH:MM, solo si se menciona (con dÃ­a/mes/aÃ±o explÃ­citos).
-3. Modo Reporte â†’ valores vÃ¡lidos (Correo, Jira, TelÃ©fono, Monitoreo, â€¦).
-4. Evento/ Incidente â†’ Evento | Incidente.
-5. DescripciÃ³n Evento/ Incidente â†’ resumen claro y profesional.
-6. Sistema â†’ (VPN, Correo, Active Directory, â€¦).
+1. CODIGO → (dejar vacío; lo genera el sistema).
+2. Fecha y Hora de Apertura → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
+3. Modo Reporte → valores válidos (Correo, Jira, Teléfono, Monitoreo, …).
+4. Evento/ Incidente → Evento | Incidente.
+5. Descripción Evento/ Incidente → resumen claro y profesional.
+6. Sistema → (VPN, Correo, Active Directory, …).
 7. Area
-8. UbicaciÃ³n
-9. Impacto â†’ Alto | Medio | Bajo.
-10. ClasificaciÃ³n â†’ elige exactamente UNO de: 
+8. Ubicación
+9. Impacto → Alto | Medio | Bajo.
+10. Clasificación → elige exactamente UNO de: 
 {CLASIF_TEXTO}
-11. AcciÃ³n Inmediata
-12. SoluciÃ³n
-13. Area de GTIC - Coordinando â†’ (DSEC - Seguridad, DITC - Infraestructura, DSTC - Soporte TÃ©cnico, DISC - Sistemas, â€¦).
-14. Encargado SI â†’ solo si se menciona; no inventes nombres.
-15. Fecha y Hora de Cierre â†’ YYYY-MM-DD HH:MM, solo si se menciona (con dÃ­a/mes/aÃ±o explÃ­citos).
-16. Tiempo SoluciÃ³n â†’ â€œX horas Y minutosâ€ si puedes calcular (Cierre âˆ’ Apertura); si no, vacÃ­o.
-17. Estado â†’ Cerrado | En investigaciÃ³n.
-18. Vulnerabilidad â†’ Vacio
-19. Causa â†’ vacÃ­o.
-20. ID Amenaza â†’ Vacio
-21. Amenaza â†’ vacÃ­o.
+11. Acción Inmediata
+12. Solución
+13. Area de GTIC - Coordinando → (DSEC - Seguridad, DITC - Infraestructura, DSTC - Soporte Técnico, DISC - Sistemas, …).
+14. Encargado SI → solo si se menciona; no inventes nombres.
+15. Fecha y Hora de Cierre → YYYY-MM-DD HH:MM, solo si se menciona (con día/mes/año explícitos).
+16. Tiempo Solución → “X horas Y minutos” si puedes calcular (Cierre − Apertura); si no, vacío.
+17. Estado → Cerrado | En investigación.
+18. Vulnerabilidad → Vacio
+19. Causa → vacío.
+20. ID Amenaza → Vacio
+21. Amenaza → vacío.
 
 [REPORTE DE ENTRADA]:
 """
 
 # ---------------------------
-# Utilidades de saneamiento / validaciÃ³n
+# Utilidades de saneamiento / validación
 # ---------------------------
 def parse_model_output_to_dict(raw: str) -> dict | None:
     # Intenta JSON directo
@@ -135,16 +134,16 @@ def parse_model_output_to_dict(raw: str) -> dict | None:
     return None
 
 def build_row_from_record(rec: dict) -> list[str]:
-    # Mapea por nombre â†’ orden canÃ³nico
+    # Mapea por nombre → orden canónico
     fila = [ (rec.get(col) or "").strip() for col in COLUMNAS ]
     return fila
 
 def fallback_parse_pipes(raw: str) -> list[str]:
     cleaned = sanitize_text(raw)
     parts, _ = normalize_21_fields(cleaned)
-    # â€œEvento/ Incidenteâ€ a valor canÃ³nico
+    # “Evento/ Incidente” a valor canónico
     parts[3] = norm_evento_incidente(parts[3])
-    # Forzar vacÃ­os 18â€“21
+    # Forzar vacíos 18–21
     parts[17] = ""; parts[18] = ""; parts[19] = ""; parts[20] = ""
     return parts
     
@@ -154,54 +153,43 @@ def sanitize_text(s: str) -> str:
     s = re.sub(r"```$", "", s)
     s = s.replace("```", "")
     s = s.replace("\n", " ").replace("\r", " ")
-    s = s.replace("â€œ", '"').replace("â€", '"').replace("â€™", "'")
+    s = s.replace("“", '"').replace("”", '"').replace("’", "'")
     m = re.search(r"[^|\n]*\|[^|\n]*\|", s)
     if m:
         s = s[m.start():]
     return s.strip().strip('"').strip()
 
 def assert_20_pipes(s: str):
-    """Muestra un aviso si la lÃ­nea no tiene exactamente 20 pipes (21 campos)."""
+    """Muestra un aviso si la línea no tiene exactamente 20 pipes (21 campos)."""
     cnt = s.count("|")
     if cnt != 20:
-        st.info(f"Se detectaron {cnt+1} campos; se fusionarÃ¡ el excedente en 'DescripciÃ³n'.")
+        st.info(f"Se detectaron {cnt+1} campos; se fusionará el excedente en 'Descripción'.")
 
 def normalize_21_fields(raw: str) -> Tuple[List[str], List[str]]:
     avisos = []
     parts = [p.strip() for p in raw.split("|")]
     original_count = len(parts)
     if original_count > 21:
-        # Fusiona el excedente en 'DescripciÃ³n' (columna 5)
+        # Fusiona el excedente en 'Descripción' (columna 5)
         keep_tail = 16  # columnas 6..21
         left_end = max(4, original_count - keep_tail)
         desc = " | ".join(parts[4:left_end])
         parts = parts[:4] + [desc] + parts[left_end:]
-        avisos.append(f"Se detectaron {original_count} campos; se fusionÃ³ el excedente en 'DescripciÃ³n'.")
+        avisos.append(f"Se detectaron {original_count} campos; se fusionó el excedente en 'Descripción'.")
     if len(parts) < 21:
         faltan = 21 - len(parts)
-        avisos.append(f"Se detectaron {len(parts)} campos; se completaron {faltan} vacÃ­os.")
+        avisos.append(f"Se detectaron {len(parts)} campos; se completaron {faltan} vacíos.")
         parts += [""] * faltan
     parts = [p.strip() for p in parts]
     return parts, avisos
 
 def is_empty_token(x: str) -> bool:
-    # Por ahora, solo vacÃ­o literal (""), como pediste
+    # Por ahora, solo vacío literal (""), como pediste
     return x.strip().lower() in {""}
 
 def clean_empty_tokens(parts: list[str]) -> list[str]:
     """Quita espacios extra en cada token sin alterar posiciones."""
     return [(p or "").strip() for p in parts]
-
-def norm_opcion(valor: str, opciones: list[str]) -> str:
-    """Normaliza por similitud bÃ¡sica contra un set de opciones."""
-    v = (valor or "").strip().lower()
-    for op in opciones:
-        if v == op.lower():
-            return op
-    # sinonimos rÃ¡pidos
-    if v in ("telefono","telÃ©fono","tel"): return "TelÃ©fono"
-    if v in ("email","correo"): return "Correo"
-    return valor or ""
 
 
 def parse_dt(s: str):
@@ -311,10 +299,10 @@ def extraer_horas_any(texto: str) -> list[str]:
 def fechas_desde_texto(texto: str) -> tuple[str, str]:
     """
     Retorna (apertura, cierre) en "YYYY-MM-DD HH:MM".
-    - Si hay dÃ­a+mes (con o sin aÃ±o) y horas, usa esa fecha (aÃ±o actual si falta).
+    - Si hay día+mes (con o sin año) y horas, usa esa fecha (año actual si falta).
     - Si solo hay horas, usa fecha de hoy.
     - Si no hay horas, retorna ("","").
-    - Si hay dos o mÃ¡s horas, cierre = Ãºltima; si la Ãºltima < primera, suma 1 dÃ­a.
+    - Si hay dos o más horas, cierre = última; si la última < primera, suma 1 día.
     """
     horas = extraer_horas_any(texto)
     if not horas:
@@ -350,7 +338,7 @@ def calcula_tiempo_desde_texto(texto: str) -> str:
     return f"{horas} horas {minutos} minutos"
 
 # ---------------------------
-# Inferencia de UbicaciÃ³n / Modo / AcciÃ³n / SoluciÃ³n / ClasificaciÃ³n / Ãrea GTIC / Sistema / Ãrea
+# Inferencia de Ubicación / Modo / Acción / Solución / Clasificación / Área GTIC / Sistema / Área
 # ---------------------------
 DEPTS_BO = {
     "la paz": ["la paz", "lpz", "senkata"],
@@ -358,7 +346,7 @@ DEPTS_BO = {
     "cochabamba": ["cochabamba", "cbba", "cbb"],
     "chuquisaca": ["chuquisaca", "sucre"],
     "oruro": ["oruro"],
-    "potosÃ­": ["potosi", "potosÃ­"],
+    "potosí": ["potosi", "potosí"],
     "beni": ["beni", "trinidad"],
     "pando": ["pando", "cobija"],
     "tarija": ["tarija", "yacuiba", "villa montes"],
@@ -367,7 +355,7 @@ def detectar_ubicacion_ext(texto: str) -> str:
     t = texto.lower()
     if "a nivel nacional" in t or "nivel nacional" in t:
         return "Bolivia (nivel nacional)"
-    m = re.search(r"(sucursal|oficina|sede)\s+([a-zÃ¡Ã©Ã­Ã³ÃºÃ± ]+)", t)
+    m = re.search(r"(sucursal|oficina|sede)\s+([a-záéíóúñ ]+)", t)
     if m:
         return f"{m.group(1).title()} {m.group(2).strip().title()}"
     for dept, keys in DEPTS_BO.items():
@@ -382,11 +370,11 @@ def detectar_modo_reporte(texto: str) -> str:
         return "Jira"
     if "monitoreo" in t or "alerta" in t:
         return "Monitoreo"
-    if any(x in t for x in ["telÃ©fono", "telefono", "llam", "llamada", "celular", "whatsapp"]):
-        return "TelÃ©fono"
+    if any(x in t for x in ["teléfono", "telefono", "llam", "llamada", "celular", "whatsapp"]):
+        return "Teléfono"
     if any(x in t for x in ["correo", "e-mail", "email", "mail", "outlook"]):
         return "Correo"
-    return "TelÃ©fono"
+    return "Teléfono"
 
 def extraer_encargado(texto: str) -> str:
     """
@@ -394,26 +382,26 @@ def extraer_encargado(texto: str) -> str:
     Devuelve el nombre si lo encuentra.
     """
     t = texto.lower()
-    m = re.search(r"(encargad[oa]|responsable)\s+(es\s+)?([a-zÃ¡Ã©Ã­Ã³ÃºÃ±\s]+)", texto, re.IGNORECASE)
+    m = re.search(r"(encargad[oa]|responsable)\s+(es\s+)?([a-záéíóúñ\s]+)", texto, re.IGNORECASE)
     if m:
         nombre = m.group(3).strip()
-        # Cortar si hay 'del Ã¡rea' o frases largas
+        # Cortar si hay 'del área' o frases largas
         nombre = re.split(r"\s+(del|de la|de los|de las)\b", nombre, 1)[0].strip()
         return nombre.title()
     return ""
 
 ACCION_RULES = [
-    (r"reinici(ar|Ã³|o|amos|aron).*(equipo|pc|servicio|servidor)", "Reinicio de servicios/equipo"),
-    (r"(verific(ar|Ã³|aron).*(conectividad|ping|traz))", "VerificaciÃ³n de conectividad"),
-    (r"(bloque(o|ar|Ã³).*(cuenta)|forz[oÃ³].*contraseÃ±|cambio de contraseÃ±)", "Bloqueo/cambio de contraseÃ±as"),
-    (r"aisl(ar|ado|amiento).*(equipo)|segmentaci[oÃ³]n", "Aislamiento del equipo"),
+    (r"reinici(ar|ó|o|amos|aron).*(equipo|pc|servicio|servidor)", "Reinicio de servicios/equipo"),
+    (r"(verific(ar|ó|aron).*(conectividad|ping|traz))", "Verificación de conectividad"),
+    (r"(bloque(o|ar|ó).*(cuenta)|forz[oó].*contraseñ|cambio de contraseñ)", "Bloqueo/cambio de contraseñas"),
+    (r"aisl(ar|ado|amiento).*(equipo)|segmentaci[oó]n", "Aislamiento del equipo"),
 ]
 SOLUCION_RULES = [
-    (r"(desbloque(o|ar)|reset).*cuenta|restablecimi?ento.*contraseÃ±", "Desbloqueo / reseteo de cuenta"),
-    (r"(limpieza|eliminaci[oÃ³]n).*(malware|virus|troyano)", "Limpieza de malware"),
+    (r"(desbloque(o|ar)|reset).*cuenta|restablecimi?ento.*contraseñ", "Desbloqueo / reseteo de cuenta"),
+    (r"(limpieza|eliminaci[oó]n).*(malware|virus|troyano)", "Limpieza de malware"),
     (r"(regla|permit|bloque).*(firewall|fw|ips|waf)", "Ajuste de reglas en firewall/WAF"),
-    (r"(whitelist|allowlist|excepci[oÃ³]n)", "CreaciÃ³n de excepciÃ³n/allowlist"),
-    (r"(reconfiguraci[oÃ³]n|ajuste).*(pol[iÃ­]tica|configuraci[oÃ³]n)", "ReconfiguraciÃ³n de polÃ­ticas"),
+    (r"(whitelist|allowlist|excepci[oó]n)", "Creación de excepción/allowlist"),
+    (r"(reconfiguraci[oó]n|ajuste).*(pol[ií]tica|configuraci[oó]n)", "Reconfiguración de políticas"),
 ]
 def _collect(vals: set[str], rules: list[tuple[str,str]], texto: str):
     t = texto.lower()
@@ -429,22 +417,22 @@ def infer_solucion(texto: str) -> str:
 
 CLASIF_PATTERNS = {
     "Acceso no autorizado": [
-        r"acceso no autoriz", r"intrus", r"suplantaci[oÃ³]n",
-        r"credenciales? (compromet|filtrad|robadas)", r"elevaci[oÃ³]n de privilegios",
+        r"acceso no autoriz", r"intrus", r"suplantaci[oó]n",
+        r"credenciales? (compromet|filtrad|robadas)", r"elevaci[oó]n de privilegios",
         r"cuenta comprometida|login irregular",
     ],
-    "ModificaciÃ³n de recursos no autorizado": [
-        r"defacement|desfiguraci[oÃ³]n", r"alteraci[oÃ³]n|modificaci[oÃ³]n.*no autoriz",
+    "Modificación de recursos no autorizado": [
+        r"defacement|desfiguraci[oó]n", r"alteraci[oó]n|modificaci[oó]n.*no autoriz",
         r"borrad(o|a) (no autoriz|accidental)", r"integridad.*(afectad|compromet)",
     ],
     "Uso inapropiado de recursos": [
-        r"uso inapropiad|uso indebido|violaci[oÃ³]n.*pol[Ã­i]tica.*uso", r"usb no autoriz",
+        r"uso inapropiad|uso indebido|violaci[oó]n.*pol[íi]tica.*uso", r"usb no autoriz",
     ],
     "No disponibilidad de recursos": [
-        r"ca[iÃ­]da|indisponibil|no disponible|servicio.*no responde|interrupci[oÃ³]n|apag[oÃ³]n|fuera de servicio|vpn.*ca[iÃ­]da|ddos|denegaci[oÃ³]n",
+        r"ca[ií]da|indisponibil|no disponible|servicio.*no responde|interrupci[oó]n|apag[oó]n|fuera de servicio|vpn.*ca[ií]da|ddos|denegaci[oó]n",
     ],
-    "ExploraciÃ³n de Vulnerabilidades": [
-        r"escane[oÃ³]|scan|nmap|nessus|openvas|enumeraci[oÃ³]n|port scan|sondeo de puertos",
+    "Exploración de Vulnerabilidades": [
+        r"escane[oó]|scan|nmap|nessus|openvas|enumeraci[oó]n|port scan|sondeo de puertos",
     ],
 }
 def infer_clasificacion(texto: str, clasif_modelo: str = "") -> str:
@@ -475,7 +463,7 @@ def infer_area_coordinando(texto: str) -> str:
     if "infraestructura" in t or "redes" in t or "vpn" in t or "cisco" in t:
         return "DITC - Infraestructura"
     if "soporte" in t or "mesa de ayuda" in t:
-        return "DSTC - Soporte TÃ©cnico"
+        return "DSTC - Soporte Técnico"
     if "sistemas" in t or "erp" in t or "base de datos" in t:
         return "DISC - Sistemas"
     return ""
@@ -489,26 +477,104 @@ def infer_sistema(texto: str) -> str:
     if re.search(r"\bfirewall\b", t): return "Firewall"
     if re.search(r"\berp\b", t): return "ERP"
     if re.search(r"whatsapp", t): return "WhatsApp"
-    if re.search(r"portal web|sitio web|web p[Ãºu]blica|p[aÃ¡]gina web", t): return "Portal Web"
+    if re.search(r"portal web|sitio web|web p[úu]blica|p[aá]gina web", t): return "Portal Web"
     if re.search(r"base de datos|postgres|oracle|mysql|sql server|mssql", t): return "Base de Datos"
     return ""
 
 def infer_area(texto: str) -> str:
     t = texto.lower()
-    m = re.search(r"(Ã¡rea|area|departamento|unidad)\s+de\s+([a-zÃ¡Ã©Ã­Ã³ÃºÃ± ]+)", t)
+    m = re.search(r"(área|area|departamento|unidad)\s+de\s+([a-záéíóúñ ]+)", t)
     if m:
         return m.group(2).strip().title()
     return ""
 
-def norm_opcion(valor: str, validos: list[str]) -> str:
-    v = (valor or "").strip().lower()
-    for x in validos:
-        if v == x.lower():
-            return x
-    return ""
+def _normkey(s: str) -> str:
+    """
+    Normaliza para comparación: sin acentos, minúsculas, solo [a-z0-9 ].
+    """
+    if s is None:
+        return ""
+    s = str(s).strip()
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    s = s.lower()
+    s = re.sub(r"[^a-z0-9]+", " ", s).strip()
+    return s
 
+# Sinónimos por valor canónico (usa solo los que existan en `validas`)
+_SYNONYMS_BY_CANON = {
+    # Modo de reporte
+    "Teléfono": ["tel", "telefono", "phone", "llamada", "call"],
+    "Correo": ["correo", "email", "e mail", "e-mail", "mail"],
+    "Jira": ["jira", "ticket", "atlassian"],
+    "Monitoreo": ["monitoreo", "monitoring", "alerta", "deteccion", "detector"],
+    "Webex": ["webex", "web ex"],
+    "WhatsApp": ["whatsapp", "wasap", "ws", "whats"],
+
+    # Estado (si lo usas con `validas` de estado)
+    "Abierto": ["abierto", "open"],
+    "Cerrado": ["cerrado", "closed", "resuelto", "solucionado"],
+    "En Proceso": ["en proceso", "progreso", "pendiente", "working", "investigacion"],
+
+    # Impacto/Severidad (si lo usas con `validas` de impacto)
+    "Crítico": ["critico", "critical", "sev1", "sev 1", "severidad 1"],
+    "Alto": ["alto", "high", "sev2", "severidad 2"],
+    "Medio": ["medio", "medium", "sev3"],
+    "Bajo": ["bajo", "low", "sev4"],
+}
+
+def norm_opcion(valor: Optional[str], validas: Iterable[str]) -> Optional[str]:
+    """
+    Normaliza `valor` a una de las opciones de `validas`.
+    - Coincidencia exacta (acento/espacio/índice-insensible)
+    - Sinónimos (solo si el canónico existe en `validas`)
+    - Fuzzy match (difflib) sobre claves normalizadas
+    Devuelve el canónico tal como aparece en `validas`, o None si no hay match.
+    """
+    if valor is None:
+        return None
+
+    # Mapa de canónicos válidos: normalizado -> forma exacta provista en `validas`
+    validas = list(validas)
+    valid_map = {_normkey(v): v for v in validas}
+
+    # 1) ¿coincide directamente con alguna válida?
+    v_norm = _normkey(valor)
+    if v_norm in valid_map:
+        return valid_map[v_norm]
+
+    # 2) ¿coincide con algún sinónimo de un canónico que esté en `validas`?
+    #    (solo construimos sinónimos de canónicos que realmente estén permitidos)
+    syn_map = {}
+    for canon in validas:
+        canon_key = _normkey(canon)
+        # encuentra clave exacta del canónico según como lo tienes en _SYNONYMS_BY_CANON
+        # (insensible a acentos y espacios)
+        for syn_canon, syn_list in _SYNONYMS_BY_CANON.items():
+            if _normkey(syn_canon) == canon_key:
+                for s in syn_list:
+                    syn_map[_normkey(s)] = canon  # apúntalo al canónico “real” de `validas`
+                break
+
+    if v_norm in syn_map:
+        return syn_map[v_norm]
+
+    # 3) Fuzzy: buscamos el más parecido entre válidas y sinónimos
+    candidates_keys = list(valid_map.keys()) + list(syn_map.keys())
+    match = difflib.get_close_matches(v_norm, candidates_keys, n=1, cutoff=0.86)
+    if match:
+        k = match[0]
+        # si es válida directa
+        if k in valid_map:
+            return valid_map[k]
+        # si es sinónimo
+        if k in syn_map:
+            return syn_map[k]
+
+    # 4) Sin match
+    return None
 # ---------------------------
-# Generador de CODIGO: INC-<dÃ­a>-<mes>-<NNN>
+# Generador de CODIGO: INC-<día>-<mes>-<NNN>
 # ---------------------------
 def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
     dia, mes = None, None
@@ -546,8 +612,8 @@ def generar_codigo_inc(ws, fecha_apertura: str | None) -> str:
 user_question = st.text_area(
     "Describe el incidente:",
     height=200,
-    placeholder="Ej: A las 8:00am el Ã¡rea de Contabilidad reporta por Correo que no puede acceder al sistema de Correo corporativo. Como acciÃ³n inmediata, el usuario reiniciÃ³ el equipo y Mesa de Ayuda validÃ³ conectividad sin resultados. Seguridad InformÃ¡tica coordinÃ³ la atenciÃ³n y reiniciÃ³ el servicio de Correo en el servidor, verificando autenticaciÃ³n y entrega de mensajes. A las 10:15am el servicio quedÃ³ restablecido y se cerrÃ³ el incidente.",
-    help="Incluye: Fecha/hora de apertura, Sistema, Ãrea, AcciÃ³n inmediata, SoluciÃ³n, Ãrea GTIC que coordinÃ³ y Fecha/hora de cierre."
+    placeholder="Ej: A las 8:00am el área de Contabilidad reporta por Correo que no puede acceder al sistema de Correo corporativo. Como acción inmediata, el usuario reinició el equipo y Mesa de Ayuda validó conectividad sin resultados. Seguridad Informática coordinó la atención y reinició el servicio de Correo en el servidor, verificando autenticación y entrega de mensajes. A las 10:15am el servicio quedó restablecido y se cerró el incidente.",
+    help="Incluye: Fecha/hora de apertura, Sistema, Área, Acción inmediata, Solución, Área GTIC que coordinó y Fecha/hora de cierre."
 )
 
 if st.button("Reportar", use_container_width=True):
@@ -566,7 +632,7 @@ if st.button("Reportar", use_container_width=True):
             st.error(f"Error al generar contenido: {e}")
             st.stop()
 
-        # 2) Saneo + normalizaciÃ³n a 21 columnas
+        # 2) Saneo + normalización a 21 columnas
         cleaned = sanitize_text(response_text)
         cleaned = re.sub(r"\s\|\s", " ; ", cleaned)
         assert_20_pipes(cleaned)
@@ -574,7 +640,7 @@ if st.button("Reportar", use_container_width=True):
         fila = clean_empty_tokens(fila)
         fila[3] = "Evento" if "evento" in (fila[3] or "").lower() else "Incidente"
 
-        # Forzar vacÃ­os 18â€“21
+        # Forzar vacíos 18–21
         fila[17] = ""; fila[18] = ""; fila[19] = ""; fila[20] = ""
 
         # 3) Fechas: extraer del texto y defaults
@@ -582,16 +648,16 @@ if st.button("Reportar", use_container_width=True):
         # Si el modelo no dio apertura, usa ahora
         if not fila[1].strip():
             fila[1] = datetime.now(TZ).strftime("%Y-%m-%d %H:%M")
-        # Si no hay cierre y el extractor encontrÃ³, Ãºsalo
+        # Si no hay cierre y el extractor encontró, úsalo
         if not fila[14].strip() and ci_auto:
             fila[14] = ci_auto
 
-        # 4) Realineo semÃ¡ntico mÃ­nimo (corrige campos corridos)
-                # 4) Realineo semÃ¡ntico reforzado (corrige campos corridos)
-        CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosÃ­","potosi","sucre","beni","pando","oruro","bolivia"}
+        # 4) Realineo semántico mínimo (corrige campos corridos)
+                # 4) Realineo semántico reforzado (corrige campos corridos)
+        CIUDADES = {"la paz","el alto","santa cruz","cochabamba","tarija","potosí","potosi","sucre","beni","pando","oruro","bolivia"}
         IMPACTOS = {"alto","medio","bajo"}
-        ESTADOS  = {"cerrado","en investigaciÃ³n","en investigacion"}
-        MODO_OPC = ["Correo","Jira","TelÃ©fono","Monitoreo","Webex","WhatsApp"]
+        ESTADOS  = {"cerrado","en investigación","en investigacion"}
+        MODO_OPC = ["Correo","Jira","Teléfono","Monitoreo","Webex","WhatsApp"]
         SISTEMAS_KEYWORDS = ["firewall","kubernetes","cortex","checkpoint","proxy","waf","antivirus","umbrella","ise","vpn","exchange","servidor","server","correo","email","outlook"]
 
         def _looks_ciudad(s: str) -> bool:
@@ -609,16 +675,16 @@ if st.button("Reportar", use_container_width=True):
             return norm_opcion(s, MODO_OPC)
 
         def _put(idx: int, val: str) -> bool:
-            """Escribe en idx solo si estÃ¡ vacÃ­o."""
+            """Escribe en idx solo si está vacío."""
             if not (fila[idx] or "").strip() and (val or "").strip():
                 fila[idx] = val
                 return True
             return False
 
-        # Limpieza bÃ¡sica
+        # Limpieza básica
         fila = [(x or "").strip() for x in fila]
 
-        # A) Impacto mal ubicado (a veces cae en Sistema/Ãrea/UbicaciÃ³n/ClasificaciÃ³nâ€¦)
+        # A) Impacto mal ubicado (a veces cae en Sistema/Área/Ubicación/Clasificación…)
         for i in range(21):
             if i == 8: 
                 continue
@@ -655,7 +721,7 @@ if st.button("Reportar", use_container_width=True):
                 if i != 2:
                     fila[i] = ""
 
-        # E) Ãrea GTIC (DSEC/DITC/DSTC/DISC) detectada en otro lado
+        # E) Área GTIC (DSEC/DITC/DSTC/DISC) detectada en otro lado
         for i in range(21):
             if i == 12: 
                 continue
@@ -665,20 +731,20 @@ if st.button("Reportar", use_container_width=True):
                 if i != 12:
                     fila[i] = ""
 
-        # F) Encargado: del texto libre o si cayÃ³ en otra columna
+        # F) Encargado: del texto libre o si cayó en otra columna
         if not fila[13].strip():
             enc = extraer_encargado(user_question)
             if enc:
                 fila[13] = enc
-        # Si nombres cortos quedaron en otras columnas, muÃ©velos
+        # Si nombres cortos quedaron en otras columnas, muévelos
         for i in (5,6,7,9,10,11,12):
             t = (fila[i] or "").strip()
-            if re.fullmatch(r"[A-Za-zÃÃ‰ÃÃ“ÃšÃœÃ¡Ã©Ã­Ã³ÃºÃ±Ã‘]+(?:\s+[A-Za-zÃÃ‰ÃÃ“ÃšÃœÃ¡Ã©Ã­Ã³ÃºÃ±Ã‘]+)?", t) and len(t.split()) <= 2:
+            if re.fullmatch(r"[A-Za-zÁÉÍÓÚÜáéíóúñÑ]+(?:\s+[A-Za-zÁÉÍÓÚÜáéíóúñÑ]+)?", t) and len(t.split()) <= 2:
                 if t and t[0].isalpha() and t[0].isupper():
                     if _put(13, t): 
                         fila[i] = ""
 
-        # G) â€œAGETICâ€ â†’ Ãrea (si estÃ¡ en otra columna)
+        # G) “AGETIC” → Área (si está en otra columna)
         for i in range(21):
             if "agetic" in (fila[i] or "").lower():
                 _put(6, "AGETIC")
@@ -697,7 +763,7 @@ if st.button("Reportar", use_container_width=True):
                 if _put(5, fila[i]):
                     fila[i] = ""
 
-        # I) UbicaciÃ³n: si hay ciudad en otras columnas, muÃ©vela; si vacÃ­a, infiere del texto
+        # I) Ubicación: si hay ciudad en otras columnas, muévela; si vacía, infiere del texto
         if not fila[7].strip():
             for i in range(21):
                 if i == 7: 
@@ -710,7 +776,7 @@ if st.button("Reportar", use_container_width=True):
         if not fila[7].strip():
             fila[7] = detectar_ubicacion_ext(user_question) or ""
 
-        # J) AcciÃ³n inmediata / SoluciÃ³n mal ubicadas (verbos tÃ­picos en otras columnas)
+        # J) Acción inmediata / Solución mal ubicadas (verbos típicos en otras columnas)
         if not fila[10].strip():
             fila[10] = infer_accion_inmediata(user_question)
         if not fila[11].strip():
@@ -719,17 +785,17 @@ if st.button("Reportar", use_container_width=True):
         for i in (5,6,7,9):
             t = (fila[i] or "").lower()
             if re.search(r"\b(reinici|bloque|verific|restablec|permit|desbloque|allow|whitelist)\b", t):
-                # Si no hay soluciÃ³n â†’ va a SoluciÃ³n; si hay â†’ a AcciÃ³n inmediata
+                # Si no hay solución → va a Solución; si hay → a Acción inmediata
                 if not fila[11].strip():
                     fila[11] = fila[i]
                 elif not fila[10].strip():
                     fila[10] = fila[i]
                 fila[i] = ""
 
-        # K) ClasificaciÃ³n final (catÃ¡logo + inferencia)
+        # K) Clasificación final (catálogo + inferencia)
         fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
 
-        # L) CorrecciÃ³n de valores imposibles en Sistema/Ãrea/UbicaciÃ³n
+        # L) Corrección de valores imposibles en Sistema/Área/Ubicación
         #    (p.ej. Impacto o Estado que se nos haya escapado)
         if _looks_impacto(fila[5]): 
             _put(8, fila[5].title()); fila[5] = infer_sistema(user_question) or fila[5]
@@ -742,7 +808,7 @@ if st.button("Reportar", use_container_width=True):
         if not _looks_ciudad(fila[7]) and _looks_sistema(fila[7]):
             _put(5, fila[7]); fila[7] = detectar_ubicacion_ext(user_question) or "La paz"
 
-        # 5) Tiempo de soluciÃ³n
+        # 5) Tiempo de solución
         if not fila[15].strip():
             fila[15] = calcula_tiempo_solucion(fila[1], fila[14])
         if not fila[15].strip():
@@ -751,28 +817,28 @@ if st.button("Reportar", use_container_width=True):
         # 6) Inferencias y normalizaciones
         # Modo Reporte
         fila[2] = norm_opcion(fila[2] or detectar_modo_reporte(user_question),
-                              ["Correo","Jira","TelÃ©fono","Monitoreo","Webex","WhatsApp"]) or "Otro"
+                              ["Correo","Jira","Teléfono","Monitoreo","Webex","WhatsApp"]) or "Otro"
 
-        # UbicaciÃ³n (si quedÃ³ vacÃ­a)
+        # Ubicación (si quedó vacía)
         if not fila[7].strip():
             fila[7] = detectar_ubicacion_ext(user_question) or "La Paz, Bolivia"
 
-        # AcciÃ³n inmediata y SoluciÃ³n
+        # Acción inmediata y Solución
         if not fila[10].strip():
             fila[10] = infer_accion_inmediata(user_question)
         if not fila[11].strip():
             fila[11] = infer_solucion(user_question)
 
-        # ClasificaciÃ³n
+        # Clasificación
         fila[9] = normaliza_clasificacion_final(fila[9]) or infer_clasificacion(user_question) or "Otros"
 
-        # Ãrea de GTIC / Encargado
+        # Área de GTIC / Encargado
         if not fila[12].strip():
             fila[12] = infer_area_coordinando(user_question)
         if not fila[13].strip():
             fila[13] = extraer_encargado(user_question)
 
-        # Sistema / Ãrea
+        # Sistema / Área
         if not fila[5].strip():
             fila[5] = infer_sistema(user_question) or "Firewall"
         if not fila[6].strip():
@@ -780,15 +846,15 @@ if st.button("Reportar", use_container_width=True):
 
         # Estado por defecto
         if not fila[16].strip():
-            fila[16] = "Cerrado" if fila[14].strip() else "En investigaciÃ³n"
+            fila[16] = "Cerrado" if fila[14].strip() else "En investigación"
 
         # 7) Validaciones finales
         if len(fila) != 21:
-            st.error(f"La salida quedÃ³ con {len(fila)} columnas (esperado: 21).")
+            st.error(f"La salida quedó con {len(fila)} columnas (esperado: 21).")
             st.code(cleaned, language="text")
             st.stop()
 
-        # 8) CÃ³digo + timestamp
+        # 8) Código + timestamp
         codigo = generar_codigo_inc(ws, fila[1] if fila[1].strip() else None)
         fila[0] = codigo
         registro_ts = datetime.now(TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -807,3 +873,20 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
