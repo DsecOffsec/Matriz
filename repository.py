@@ -630,16 +630,16 @@ if st.button("Reportar", use_container_width=True):
     prompt = persona + user_question.strip()
 
    with st.spinner("Generando y validando la fila..."):
-    # 1) LLM (con timeout + trazas)
-    response_text = generar_con_timeout(prompt, temperature=0.2, timeout_s=30)
-
-    # 2) Limpieza / normalización
-    st.write(":grey[→ Normalizando respuesta…]")
-    cleaned = sanitize_text(response_text)
-    # OJO: no sustituyas ' | ' válidos aquí; solo tu lógica de validación
-    assert_20_pipes(cleaned)
-    fila, avisos = normalize_21_fields(cleaned)
-    st.write(":grey[✓ Normalización OK]")
+        # 1) LLM (con timeout + trazas)
+        response_text = generar_con_timeout(prompt, temperature=0.2, timeout_s=30)
+    
+        # 2) Limpieza / normalización
+        st.write(":grey[→ Normalizando respuesta…]")
+        cleaned = sanitize_text(response_text)
+        # OJO: no sustituyas ' | ' válidos aquí; solo tu lógica de validación
+        assert_20_pipes(cleaned)
+        fila, avisos = normalize_21_fields(cleaned)
+        st.write(":grey[✓ Normalización OK]")
 
     # 3) Cualquier otra validación/ajuste que hagas…
     # st.write(":grey[→ Ajustando campos…]")
@@ -888,6 +888,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
