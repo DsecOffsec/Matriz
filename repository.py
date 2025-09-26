@@ -20,15 +20,32 @@ from google.oauth2.service_account import Credentials
 st.title("MATRIZ DE REPORTES DSEC")
 
 # --- CONFIG VERTEX AI (usa tu Service Account en secrets) ---
-PROJECT_ID = st.secrets["GCP_PROJECT_ID"]          # p.ej. "mi-proyecto-gcp"
+from google.oauth2.service_account import Credentials
+from vertexai import init as vertex_init
+from vertexai.generative_models import GenerativeModel
+
+# 1) Carga credenciales desde tus secrets (ya las tienes en connections.gsheets)
+sa_info = dict(st.secrets["connections"]["gsheets"])
+creds   = Credentials.from_service_account_info(sa_info)
+
+# 2) Proyecto y región desde secrets
+PROJECT_ID = st.secrets["GCP_PROJECT_ID"]          # p.ej. "portafolio-461101" (¡ojo! no confundir con 'matriz' si no es el project real)
 REGION     = st.secrets.get("VERTEX_REGION", "us-central1")
-SA_INFO    = st.secrets["GCP_SERVICE_ACCOUNT_JSON"]  # JSON completo de la SA
 
-creds = Credentials.from_service_account_info(SA_INFO)
-vertex_init(project=PROJECT_ID, location=REGION)
+# 3) Inicializa Vertex con credenciales del SA
+vertex_init(project=PROJECT_ID, location=REGION, credentials=creds)
 
-# Usa el alias de modelo SIN sufijo de versión para evitar 404 por región/permisos
+# 4) Usa el nombre flotante del modelo (evita -002 mientras pruebas)
 model = GenerativeModel("gemini-1.5-flash")
+
+# 5) (opcional) smoke test
+try:
+    r = model.generate_content(["hello"], generation_config={"temperature": 0.0})
+    st.write(":grey[Vertex OK]")
+except Exception as e:
+    st.error(f"Vertex error: {e}")
+    st.stop()
+
 
 TZ = ZoneInfo("America/La_Paz")
 
@@ -814,6 +831,7 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
 
 
