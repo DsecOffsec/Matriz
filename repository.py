@@ -8,6 +8,7 @@ from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 import google.generativeai as genai
 from typing import List, Tuple
+from vertexai import init as vertex_init
 
 st.title("MATRIZ DE REPORTES DSEC")
 
@@ -20,9 +21,13 @@ SHEET_ID = "1UP_fwvXam8-1IXI-oUbkNqGzb0_T0XNrYsU7ziJVAqE"
 sh = gc.open_by_key(SHEET_ID)
 ws = sh.worksheet("Reportes")
 
+PROJECT_ID = st.secrets["GCP_PROJECT_ID"]
+REGION     = st.secrets.get("VERTEX_REGION", "us-central1")
+vertex_init(project=PROJECT_ID, location=REGION
+
 api_key = st.secrets["GOOGLE_API_KEY"]
 genai.configure(api_key=api_key)
-model = genai.GenerativeModel("gemini-1.5-flash")
+model = GenerativeModel("gemini-1.5-flash")
 
 TZ = ZoneInfo("America/La_Paz")
 
@@ -807,4 +812,5 @@ if st.button("Reportar", use_container_width=True):
             st.success(f"Incidente registrado correctamente: {codigo}")
         except Exception as e:
             st.error(f"No se pudo escribir en la hoja: {e}")
+
 
