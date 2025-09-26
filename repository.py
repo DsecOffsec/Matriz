@@ -12,7 +12,7 @@ from typing import Optional, List, Tuple
 # =====================================================
 TZ = ZoneInfo("America/La_Paz")
 SHEET_ID = "1UP_fwvXam8-1IXI-oUbNkqGzb0_IQXh7YsU7ziJVAqE"  # tu ID real
-WORKSHEET_NAME = "Reportes"
+ws = sh.worksheet("Reportes")
 try:
     gc = gspread.service_account_from_dict(st.secrets["connections"]["gsheets"])
     sh = gc.open_by_key(SHEET_ID)
@@ -332,4 +332,5 @@ if ws:
         st.success("✅ Incidente guardado en Google Sheets")
     except Exception as e:
         st.error(f"No se pudo guardar en la hoja: {e}")
+
 
